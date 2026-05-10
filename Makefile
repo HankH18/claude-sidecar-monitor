@@ -6,6 +6,10 @@
 SHELL := /bin/bash
 .PHONY: help bootstrap dev test lint format typecheck build clean check icons
 
+# Bun isn't always on a fresh shell PATH; the official installer puts it
+# at ~/.bun/bin. Prefer that, fall back to whatever's on PATH.
+BUN := $(shell command -v bun 2>/dev/null || echo "$(HOME)/.bun/bin/bun")
+
 # Homebrew sqlcipher (ADR-002) — exposed to uv sync so pysqlcipher3 compiles
 SQLCIPHER_PATH := $(shell brew --prefix sqlcipher 2>/dev/null)
 SQLCIPHER_ENV := \
@@ -33,33 +37,33 @@ bootstrap:
 	fi
 	cd packages/collector && $(SQLCIPHER_ENV) uv sync
 	cd packages/collector && $(SQLCIPHER_ENV) uv pip install -e .
-	cd packages/dashboard && bun install
+	cd packages/dashboard && $(BUN) install
 
 dev:
 	@echo "Starting collector on :8765 and dashboard on :5173 (Ctrl-C to stop both)"
 	@trap 'kill 0' INT TERM EXIT; \
 	  (cd packages/collector && uv run csm start --reload) & \
-	  (cd packages/dashboard && bun run dev) & \
+	  (cd packages/dashboard && $(BUN) run dev) & \
 	  wait
 
 test:
 	cd packages/collector && uv run pytest
-	cd packages/dashboard && bun run test
+	cd packages/dashboard && $(BUN) run test
 
 lint:
 	cd packages/collector && uv run ruff check .
-	cd packages/dashboard && bun run lint
+	cd packages/dashboard && $(BUN) run lint
 
 format:
 	cd packages/collector && uv run ruff check --fix . && uv run ruff format .
-	cd packages/dashboard && bun run format
+	cd packages/dashboard && $(BUN) run format
 
 typecheck:
 	cd packages/collector && uv run mypy --strict src
-	cd packages/dashboard && bun run typecheck
+	cd packages/dashboard && $(BUN) run typecheck
 
 build:
-	cd packages/dashboard && bun run build
+	cd packages/dashboard && $(BUN) run build
 
 check: lint typecheck test
 
