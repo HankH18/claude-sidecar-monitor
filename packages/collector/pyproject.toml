@@ -1,0 +1,93 @@
+[project]
+name = "csm"
+version = "0.1.0"
+description = "macOS-resident observability dashboard for Claude Code agent sessions"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Hank Holcomb" },
+]
+keywords = ["claude", "claude-code", "observability", "agents", "monitoring"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sse-starlette>=2.1",
+    "httpx>=0.27",
+    "watchdog>=5.0",
+    "typer>=0.13",
+    "argon2-cffi>=23.1",
+    "keyring>=25.0",
+    "pydantic>=2.9",
+    "sqlcipher3>=0.5; platform_system == 'Darwin'",
+]
+
+[project.scripts]
+csm = "csm.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/hankholcomb/claude-sidecar-monitor"
+Source = "https://github.com/hankholcomb/claude-sidecar-monitor"
+Issues = "https://github.com/hankholcomb/claude-sidecar-monitor/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/csm"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+    "mypy>=1.13",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle / pyflakes
+    "I",             # isort
+    "B",             # bugbear
+    "UP",            # pyupgrade
+    "SIM",           # simplify
+    "ASYNC",         # async-lint
+    "RUF",           # ruff-specific
+]
+ignore = [
+    "E501",  # line length is enforced by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true  # sqlcipher3, keyring etc. lack type stubs
+exclude = [
+    "build",
+    "dist",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:passlib.*",
+]

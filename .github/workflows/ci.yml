@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  collector:
+    name: collector (Python + uv)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: packages/collector
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Homebrew sqlcipher (ADR-002)
+        run: brew install sqlcipher
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: uv sync
+        env:
+          SQLCIPHER_PATH: /opt/homebrew/opt/sqlcipher
+          LDFLAGS: -L/opt/homebrew/opt/sqlcipher/lib
+          CPPFLAGS: -I/opt/homebrew/opt/sqlcipher/include
+          CFLAGS: -I/opt/homebrew/opt/sqlcipher/include
+        run: uv sync
+
+      - name: Install csm in editable mode
+        env:
+          SQLCIPHER_PATH: /opt/homebrew/opt/sqlcipher
+          LDFLAGS: -L/opt/homebrew/opt/sqlcipher/lib
+          CPPFLAGS: -I/opt/homebrew/opt/sqlcipher/include
+          CFLAGS: -I/opt/homebrew/opt/sqlcipher/include
+        run: uv pip install -e .
+
+      - name: ruff
+        run: uv run ruff check . && uv run ruff format --check .
+
+      - name: mypy --strict
+        run: uv run mypy --strict src
+
+      - name: pytest
+        run: uv run pytest -v
+
+  dashboard:
+    name: dashboard (Vite + Bun)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: packages/dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: bun install
+        run: bun install
+
+      - name: biome
+        run: bun run lint
+
+      - name: tsc
+        run: bun run typecheck
+
+      - name: vitest
+        run: bun run test
+
+      - name: vite build
+        run: bun run build

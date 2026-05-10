@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+# Validate commit messages against Conventional Commits.
+# Config lives at packages/dashboard/commitlint.config.cjs.
+#
+# Prefers bunx (matches the dashboard's runtime) but falls back to npx
+# so commits still validate when bun isn't on PATH inside the git hook.
+
+cd "$(dirname "$0")/../packages/dashboard" || exit 1
+
+if command -v bunx >/dev/null 2>&1; then
+  exec bunx --bun commitlint --edit "$1"
+elif [ -x "$HOME/.bun/bin/bunx" ]; then
+  exec "$HOME/.bun/bin/bunx" --bun commitlint --edit "$1"
+elif command -v npx >/dev/null 2>&1; then
+  exec npx --no-install commitlint --edit "$1"
+else
+  echo "commit-msg: neither bunx nor npx found on PATH" >&2
+  exit 1
+fi

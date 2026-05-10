@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # create release + upload assets
+
+jobs:
+  build-and-release:
+    name: Build and release csm
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Homebrew sqlcipher
+        run: brew install sqlcipher
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build dashboard static bundle
+        working-directory: packages/dashboard
+        run: |
+          bun install
+          bun run build
+
+      - name: Bundle dashboard into collector
+        run: |
+          mkdir -p packages/collector/src/csm/_static
+          cp -r packages/dashboard/dist/* packages/collector/src/csm/_static/
+
+      - name: Build collector wheel + sdist
+        working-directory: packages/collector
+        env:
+          SQLCIPHER_PATH: /opt/homebrew/opt/sqlcipher
+          LDFLAGS: -L/opt/homebrew/opt/sqlcipher/lib
+          CPPFLAGS: -I/opt/homebrew/opt/sqlcipher/include
+          CFLAGS: -I/opt/homebrew/opt/sqlcipher/include
+        run: |
+          uv build
+
+      - name: Generate release notes from CHANGELOG
+        id: notes
+        run: |
+          {
+            echo 'NOTES<<EOF'
+            awk '/^## \[/{c++; if (c==2) exit} c==1' CHANGELOG.md
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            packages/collector/dist/*.whl
+            packages/collector/dist/*.tar.gz
+          body: ${{ steps.notes.outputs.NOTES }}
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-alpha') || contains(github.ref, '-beta') }}
