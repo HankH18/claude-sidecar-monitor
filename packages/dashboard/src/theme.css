@@ -1,0 +1,92 @@
+/*
+ * Sidecar design tokens.
+ *
+ * Centralizes the dark-theme palette so semantic intent (primary action,
+ * destructive action, session-state colors) lives in one place. Components
+ * still lean on Tailwind utility classes for layout — these tokens back the
+ * few classes we expose as `var(--…)` and the SVG/inline-style usage in
+ * `Tokens.tsx`.
+ *
+ * Anti-goal: do NOT replace every Tailwind class with a CSS variable. The
+ * tokens here exist for *cross-component consistency*, not for theming.
+ */
+
+:root {
+  /* Surfaces (dark) — bumped one step lighter at the borders so cards remain
+     visible at low brightness. */
+  --color-bg: rgb(9 9 11); /* zinc-950 */
+  --color-surface: rgb(24 24 27); /* zinc-900 */
+  --color-border: rgb(39 39 42); /* zinc-800 — was zinc-900 in places */
+  --color-border-strong: rgb(63 63 70); /* zinc-700 */
+  --color-text: rgb(244 244 245); /* zinc-100 */
+  --color-text-muted: rgb(161 161 170); /* zinc-400 */
+  --color-text-faint: rgb(113 113 122); /* zinc-500 */
+
+  /* Brand / primary action — emerald. */
+  --color-primary: rgb(16 185 129); /* emerald-500 */
+  --color-primary-strong: rgb(5 150 105); /* emerald-600 */
+  --color-primary-soft: rgb(16 185 129 / 0.15);
+
+  /* Session-state semantics. Colors *and* an icon back each state — color is
+     never the only signal (cf. StatePill.tsx). */
+  --color-running: rgb(16 185 129); /* emerald — go */
+  --color-waiting: rgb(251 146 60); /* orange — needs you */
+  --color-stale: rgb(250 204 21); /* yellow — slow */
+  --color-hung: rgb(239 68 68); /* red — escalate */
+  --color-done: rgb(113 113 122); /* zinc — finished */
+
+  /* Destructive (Purge / Change passphrase). */
+  --color-danger: rgb(239 68 68);
+  --color-danger-soft: rgb(239 68 68 / 0.12);
+
+  /* Focus ring — emerald, high-contrast against any surface. */
+  --color-focus: rgb(52 211 153); /* emerald-400 */
+}
+
+/* Universal focus ring. Tailwind `focus:` utilities still work, but this
+   guarantees ANY interactive element that gains keyboard focus is visible
+   even if a component author forgot to add the right class. */
+:where(
+    a,
+    button,
+    [role="button"],
+    [role="treeitem"],
+    input,
+    select,
+    textarea,
+    summary
+  ):focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Subtle pulsing ring used for hung sessions — a stronger signal than
+   `animate-pulse` opacity alone. */
+@keyframes csm-pulse-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(239 68 68 / 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(239 68 68 / 0);
+  }
+}
+
+.animate-pulse-ring {
+  animation: csm-pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Visually-hidden helper — reuse Tailwind's `sr-only` semantics without
+   pulling in @plugin. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

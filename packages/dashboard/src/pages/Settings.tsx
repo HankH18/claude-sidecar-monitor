@@ -4,6 +4,23 @@ import { useMock } from "../api/mode";
 import type { Settings as SettingsT } from "../api/types";
 import { useSettings } from "../hooks/useSettings";
 
+/**
+ * Button intent classes — small palette so a glance tells you what each
+ * action does:
+ *   - primary   = save/submit (filled emerald)
+ *   - secondary = neutral, info-y action (outlined zinc)
+ *   - danger    = irreversible (outlined red, fills on hover)
+ */
+const BTN_PRIMARY =
+  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm font-medium bg-emerald-500 text-emerald-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+const BTN_SECONDARY =
+  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm text-zinc-200 border border-zinc-700 hover:bg-zinc-800/80 disabled:opacity-50 transition-colors";
+const BTN_DANGER =
+  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm font-medium text-red-300 border border-red-500/50 hover:bg-red-500/15 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+
+const INPUT =
+  "w-full min-h-11 px-3 rounded-md bg-zinc-900 border border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/60 focus:outline-none";
+
 export default function Settings() {
   const { settings, loading, save } = useSettings();
   const mock = useMock();
@@ -17,7 +34,14 @@ export default function Settings() {
   }, [settings]);
 
   if (loading || !form) {
-    return <div className="h-32 rounded-md bg-zinc-900/60 animate-pulse" aria-busy="true" />;
+    return (
+      <div className="space-y-4" aria-busy="true">
+        <div className="h-5 w-24 rounded bg-zinc-800/60 animate-pulse" />
+        <div className="h-11 rounded-md bg-zinc-800/40 animate-pulse" />
+        <div className="h-11 rounded-md bg-zinc-800/40 animate-pulse" />
+        <div className="h-11 rounded-md bg-zinc-800/40 animate-pulse" />
+      </div>
+    );
   }
 
   const onSubmit = async (e: FormEvent) => {
@@ -32,12 +56,12 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <header>
         <h1 className="text-lg font-semibold text-zinc-100">Settings</h1>
       </header>
 
-      <form onSubmit={onSubmit} className="space-y-4" aria-label="settings form">
+      <form onSubmit={onSubmit} className="space-y-5" aria-label="settings form">
         <Field
           id="hang_yellow_ms"
           label="Hang yellow threshold (ms)"
@@ -50,7 +74,7 @@ export default function Settings() {
             min={1000}
             max={3_600_000}
             step={1000}
-            className="w-full px-2 py-1.5 rounded bg-zinc-900 border border-zinc-800 text-sm text-zinc-200"
+            className={INPUT}
             value={form.hang_yellow_ms}
             onChange={(e) => setForm({ ...form, hang_yellow_ms: Number(e.target.value) || 0 })}
           />
@@ -68,7 +92,7 @@ export default function Settings() {
             min={1000}
             max={3_600_000}
             step={1000}
-            className="w-full px-2 py-1.5 rounded bg-zinc-900 border border-zinc-800 text-sm text-zinc-200"
+            className={INPUT}
             value={form.hang_red_ms}
             onChange={(e) => setForm({ ...form, hang_red_ms: Number(e.target.value) || 0 })}
           />
@@ -84,21 +108,18 @@ export default function Settings() {
             name="ntfy_topic"
             type="text"
             autoComplete="off"
-            className="w-full px-2 py-1.5 rounded bg-zinc-900 border border-zinc-800 text-sm text-zinc-200"
+            className={INPUT}
             value={form.ntfy_topic}
             onChange={(e) => setForm({ ...form, ntfy_topic: e.target.value })}
           />
         </Field>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="submit"
-            className="px-3 py-1.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-sm hover:bg-emerald-500/30"
-          >
+        <div className="flex items-center gap-3 flex-wrap">
+          <button type="submit" className={BTN_PRIMARY}>
             Save
           </button>
           {savedAt ? (
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-emerald-400">
               saved {new Date(savedAt).toLocaleTimeString()}
             </span>
           ) : null}
@@ -106,7 +127,7 @@ export default function Settings() {
         </div>
       </form>
 
-      <section className="space-y-3 border-t border-zinc-900 pt-4">
+      <section className="space-y-3 border-t border-zinc-800 pt-5">
         <h2 className="text-xs uppercase tracking-wide text-zinc-500">Actions</h2>
 
         <button
@@ -123,18 +144,14 @@ export default function Settings() {
               setError((err as Error).message);
             }
           }}
-          className="px-3 py-1.5 rounded border border-zinc-800 text-sm text-zinc-200 hover:bg-zinc-900"
+          className={BTN_SECONDARY}
         >
           Test notification
         </button>
 
         <PurgeForm mock={mock} />
 
-        <button
-          type="button"
-          className="px-3 py-1.5 rounded border border-zinc-800 text-sm text-zinc-200 hover:bg-zinc-900"
-          onClick={() => setShowPassphrase(true)}
-        >
+        <button type="button" className={BTN_DANGER} onClick={() => setShowPassphrase(true)}>
           Change passphrase
         </button>
       </section>
@@ -156,12 +173,12 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       <label htmlFor={id} className="block text-xs font-medium text-zinc-300">
         {label}
       </label>
       {children}
-      {hint ? <p className="text-[10px] text-zinc-600">{hint}</p> : null}
+      {hint ? <p className="text-[11px] text-zinc-500">{hint}</p> : null}
     </div>
   );
 }
@@ -169,17 +186,20 @@ function Field({
 function PurgeForm({ mock }: { mock: boolean }) {
   const [date, setDate] = useState("");
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       <label htmlFor="purge_before" className="block text-xs font-medium text-zinc-300">
         Purge data older than
       </label>
-      <div className="flex gap-2">
+      <p className="text-[11px] text-zinc-500">
+        Permanently deletes session and event rows before the chosen date.
+      </p>
+      <div className="flex gap-2 mt-1">
         <input
           id="purge_before"
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="flex-1 px-2 py-1.5 rounded bg-zinc-900 border border-zinc-800 text-sm text-zinc-200"
+          className={`${INPUT} flex-1`}
         />
         <button
           type="button"
@@ -192,7 +212,7 @@ function PurgeForm({ mock }: { mock: boolean }) {
             // The collector will expose POST /api/purge once it's ready.
             console.log("purge", date);
           }}
-          className="px-3 py-1.5 rounded border border-zinc-800 text-sm text-zinc-200 disabled:opacity-50 hover:bg-zinc-900"
+          className={BTN_DANGER}
         >
           Purge
         </button>
@@ -220,16 +240,20 @@ function PassphraseModal({ onClose }: { onClose: () => void }) {
         open
         aria-modal="true"
         aria-label="change passphrase"
-        className="relative bg-zinc-950 border border-zinc-800 rounded-md p-4 w-full max-w-sm space-y-3 text-zinc-200"
+        className="relative bg-zinc-950 border border-zinc-700 rounded-md p-5 w-full max-w-sm space-y-3 text-zinc-100"
       >
-        <h3 className="text-sm font-semibold text-zinc-100">Change passphrase</h3>
+        <h3 className="text-sm font-semibold">Change passphrase</h3>
+        <p className="text-[11px] text-zinc-500">
+          Re-encrypts the local SQLite store with a new passphrase. Don't lose this — there is no
+          recovery path.
+        </p>
         <input
           aria-label="old passphrase"
           type="password"
           placeholder="current"
           value={oldPp}
           onChange={(e) => setOldPp(e.target.value)}
-          className="w-full px-2 py-1.5 rounded bg-zinc-900 border border-zinc-800 text-sm text-zinc-200"
+          className={INPUT}
         />
         <input
           aria-label="new passphrase"
@@ -237,7 +261,7 @@ function PassphraseModal({ onClose }: { onClose: () => void }) {
           placeholder="new"
           value={newPp}
           onChange={(e) => setNewPp(e.target.value)}
-          className="w-full px-2 py-1.5 rounded bg-zinc-900 border border-zinc-800 text-sm text-zinc-200"
+          className={INPUT}
         />
         <input
           aria-label="confirm new passphrase"
@@ -245,15 +269,11 @@ function PassphraseModal({ onClose }: { onClose: () => void }) {
           placeholder="confirm new"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className="w-full px-2 py-1.5 rounded bg-zinc-900 border border-zinc-800 text-sm text-zinc-200"
+          className={INPUT}
         />
         {err ? <p className="text-xs text-red-400">{err}</p> : null}
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded border border-zinc-800 text-sm text-zinc-300 hover:bg-zinc-900"
-          >
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className={BTN_SECONDARY}>
             Cancel
           </button>
           <button
@@ -271,7 +291,7 @@ function PassphraseModal({ onClose }: { onClose: () => void }) {
                 setBusy(false);
               }
             }}
-            className="px-3 py-1.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-sm disabled:opacity-50"
+            className={BTN_DANGER}
           >
             Rotate
           </button>

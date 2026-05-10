@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "react-router";
 import type { TokensResponse } from "../api/types";
+import EmptyState from "../components/EmptyState";
 import { formatTokens } from "../components/TokenBadge";
 import { useTokens } from "../hooks/useTokens";
 
@@ -122,112 +123,142 @@ export default function Tokens() {
   const { data, loading } = useTokens();
 
   if (loading || !data) {
-    return <div className="h-32 rounded-md bg-zinc-900/60 animate-pulse" aria-busy="true" />;
+    return (
+      <div className="space-y-5" aria-busy="true">
+        <div className="space-y-2">
+          <div className="h-5 w-24 rounded bg-zinc-800/60 animate-pulse" />
+          <div className="h-3 w-56 rounded bg-zinc-800/40 animate-pulse" />
+        </div>
+        <div className="h-3 w-32 rounded bg-zinc-800/40 animate-pulse" />
+        <div className="h-32 rounded-md bg-zinc-800/40 animate-pulse" />
+        <div className="h-32 rounded-md bg-zinc-800/40 animate-pulse" />
+      </div>
+    );
   }
+
+  const hasAny =
+    data.topSessions.length > 0 ||
+    data.topProjects.length > 0 ||
+    data.totalsByModel.length > 0 ||
+    data.dailyTotals.length > 0;
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-lg font-semibold text-zinc-100">Tokens</h1>
-        <p className="text-[11px] text-zinc-600">
+        <p className="text-[11px] text-zinc-500 mt-1">
           Absolute counts; reflects API-reported usage, not billing.
         </p>
       </header>
 
-      <section aria-label="top sessions last 24h">
-        <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">
-          Top sessions (last 24h)
-        </h2>
-        <ul className="divide-y divide-zinc-900 rounded-md border border-zinc-900">
-          {data.topSessions.map((s) => (
-            <li key={s.session_id}>
-              <Link
-                to={`/sessions/${s.session_id}`}
-                className="flex items-center justify-between px-3 py-2 hover:bg-zinc-900/60"
-              >
-                <div className="min-w-0">
-                  <div className="text-sm text-zinc-200 truncate">
-                    {s.agent_type ?? "session"} · {s.project_label ?? s.worktree_root}
-                  </div>
-                  <div className="text-[10px] text-zinc-500 truncate">{s.primary_model ?? "—"}</div>
-                </div>
-                <div className="text-right font-mono text-xs text-zinc-200 shrink-0 ml-2">
-                  {formatTokens(s.input + s.output)}
-                  <div className="text-[9px] text-zinc-600">cr {formatTokens(s.cache_read)}</div>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {!hasAny ? (
+        <EmptyState
+          illustration="tokens"
+          title="No token usage yet"
+          message="Once an agent makes its first API call, totals roll up here within a few seconds."
+        />
+      ) : null}
 
-      <section aria-label="top projects all time">
-        <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">
-          Top projects (all time)
-        </h2>
-        <ul className="divide-y divide-zinc-900 rounded-md border border-zinc-900">
-          {data.topProjects.map((p) => (
-            <li key={p.worktree_root}>
-              <Link
-                to={`/projects/${encodeURIComponent(p.worktree_root)}`}
-                className="flex items-center justify-between px-3 py-2 hover:bg-zinc-900/60"
-              >
-                <div className="min-w-0">
-                  <div className="text-sm text-zinc-200 truncate">
-                    {p.project_label ?? p.worktree_root}
+      {data.topSessions.length > 0 ? (
+        <section aria-label="top sessions last 24h" className="space-y-2">
+          <h2 className="text-xs uppercase tracking-wide text-zinc-500">Top sessions (last 24h)</h2>
+          <ul className="divide-y divide-zinc-800 rounded-md border border-zinc-800 overflow-hidden">
+            {data.topSessions.map((s) => (
+              <li key={s.session_id}>
+                <Link
+                  to={`/sessions/${s.session_id}`}
+                  className="flex items-center justify-between gap-3 px-3 py-3 min-h-12 hover:bg-zinc-900/60"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm text-zinc-100 truncate">
+                      {s.agent_type ?? "session"} · {s.project_label ?? s.worktree_root}
+                    </div>
+                    <div className="text-[11px] text-zinc-500 truncate mt-0.5">
+                      {s.primary_model ?? "—"}
+                    </div>
                   </div>
-                  <div className="text-[10px] text-zinc-500 truncate">
-                    {(p as { session_count?: number }).session_count ?? 0} session
-                    {(p as { session_count?: number }).session_count === 1 ? "" : "s"}
+                  <div className="text-right font-mono tabular-nums text-xs text-zinc-100 shrink-0">
+                    {formatTokens(s.input + s.output)}
+                    <div className="text-[10px] text-zinc-500">cr {formatTokens(s.cache_read)}</div>
                   </div>
-                </div>
-                <div className="text-right font-mono text-xs text-zinc-200 shrink-0 ml-2">
-                  {formatTokens(p.input + p.output)}
-                  <div className="text-[9px] text-zinc-600">cr {formatTokens(p.cache_read)}</div>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
-      <section aria-label="totals by model">
-        <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">By model</h2>
-        <div className="rounded-md border border-zinc-900 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="text-[10px] uppercase text-zinc-500">
-              <tr>
-                <th className="text-left px-2 py-1">model</th>
-                <th className="text-right px-2 py-1">input</th>
-                <th className="text-right px-2 py-1">output</th>
-                <th className="text-right px-2 py-1 text-zinc-600">cr</th>
-                <th className="text-right px-2 py-1 text-zinc-600">cw</th>
-              </tr>
-            </thead>
-            <tbody className="font-mono">
-              {data.totalsByModel.map((m) => (
-                <tr key={m.model} className="border-t border-zinc-900">
-                  <td className="px-2 py-1 text-zinc-200">{m.model}</td>
-                  <td className="px-2 py-1 text-right">{formatTokens(m.input)}</td>
-                  <td className="px-2 py-1 text-right">{formatTokens(m.output)}</td>
-                  <td className="px-2 py-1 text-right text-zinc-500">
-                    {formatTokens(m.cache_read)}
-                  </td>
-                  <td className="px-2 py-1 text-right text-zinc-500">
-                    {formatTokens(m.cache_write)}
-                  </td>
+      {data.topProjects.length > 0 ? (
+        <section aria-label="top projects all time" className="space-y-2">
+          <h2 className="text-xs uppercase tracking-wide text-zinc-500">Top projects (all time)</h2>
+          <ul className="divide-y divide-zinc-800 rounded-md border border-zinc-800 overflow-hidden">
+            {data.topProjects.map((p) => (
+              <li key={p.worktree_root}>
+                <Link
+                  to={`/projects/${encodeURIComponent(p.worktree_root)}`}
+                  className="flex items-center justify-between gap-3 px-3 py-3 min-h-12 hover:bg-zinc-900/60"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm text-zinc-100 truncate">
+                      {p.project_label ?? p.worktree_root}
+                    </div>
+                    <div className="text-[11px] text-zinc-500 truncate mt-0.5">
+                      {(p as { session_count?: number }).session_count ?? 0} session
+                      {(p as { session_count?: number }).session_count === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                  <div className="text-right font-mono tabular-nums text-xs text-zinc-100 shrink-0">
+                    {formatTokens(p.input + p.output)}
+                    <div className="text-[10px] text-zinc-500">cr {formatTokens(p.cache_read)}</div>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {data.totalsByModel.length > 0 ? (
+        <section aria-label="totals by model" className="space-y-2">
+          <h2 className="text-xs uppercase tracking-wide text-zinc-500">By model</h2>
+          <div className="rounded-md border border-zinc-800 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase text-zinc-500">
+                <tr>
+                  <th className="text-left px-3 py-2">model</th>
+                  <th className="text-right px-3 py-2">input</th>
+                  <th className="text-right px-3 py-2">output</th>
+                  <th className="text-right px-3 py-2 text-zinc-600">cr</th>
+                  <th className="text-right px-3 py-2 text-zinc-600">cw</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody className="font-mono tabular-nums">
+                {data.totalsByModel.map((m) => (
+                  <tr key={m.model} className="border-t border-zinc-800">
+                    <td className="px-3 py-2 text-zinc-100">{m.model}</td>
+                    <td className="px-3 py-2 text-right">{formatTokens(m.input)}</td>
+                    <td className="px-3 py-2 text-right">{formatTokens(m.output)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-500">
+                      {formatTokens(m.cache_read)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-500">
+                      {formatTokens(m.cache_write)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
-      <section aria-label="daily totals chart">
-        <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">
-          Daily totals (14 days)
-        </h2>
-        <StackedBarChart daily={data.dailyTotals} />
+      <section aria-label="daily totals chart" className="space-y-2">
+        <h2 className="text-xs uppercase tracking-wide text-zinc-500">Daily totals (14 days)</h2>
+        {data.dailyTotals.length > 0 ? (
+          <StackedBarChart daily={data.dailyTotals} />
+        ) : (
+          <p className="text-xs text-zinc-600 px-1">No daily totals available yet.</p>
+        )}
       </section>
     </div>
   );

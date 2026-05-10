@@ -17,9 +17,15 @@ export function formatTokens(n: number): string {
 }
 
 /**
- * Compact dual-line token display.
- *   line 1: input · output  (primary)
- *   line 2: cache_read · cache_write  (smaller, dimmer)
+ * Compact token display with three explicit levels of typographic emphasis:
+ *
+ *   1. PRIMARY — input tokens (the cost driver) at text-sm, brighter zinc-100.
+ *   2. SECONDARY — output tokens at text-xs, dimmer zinc-400.
+ *   3. TERTIARY — cache read/write at text-[10px], faintest zinc-500.
+ *
+ * The eye should land on the state pill first, agent_type second, and only
+ * then absorb the token magnitude — keeping `text-sm` here (not text-base)
+ * preserves that order on Live rows.
  */
 export default function TokenBadge({
   input,
@@ -31,20 +37,28 @@ export default function TokenBadge({
   const showCache = cacheRead > 0 || cacheWrite > 0;
   return (
     <div
-      className={`text-right leading-tight ${className}`}
+      className={`text-right leading-tight font-mono tabular-nums ${className}`}
       aria-label={`tokens: ${input} input, ${output} output, ${cacheRead} cache read, ${cacheWrite} cache write`}
     >
-      <div className="text-xs text-zinc-200 font-mono">
-        <span title="input tokens">{formatTokens(input)}</span>
-        <span className="text-zinc-600 mx-1">·</span>
-        <span title="output tokens">{formatTokens(output)}</span>
+      <div>
+        <span className="text-sm text-zinc-100" title="input tokens">
+          {formatTokens(input)}
+        </span>
+        <span className="text-zinc-700 mx-1" aria-hidden="true">
+          ·
+        </span>
+        <span className="text-xs text-zinc-400" title="output tokens">
+          {formatTokens(output)}
+        </span>
       </div>
       {showCache ? (
-        <div className="text-[10px] text-zinc-500 font-mono">
+        <div className="text-[10px] text-zinc-500">
           <span title="cache read">cr {formatTokens(cacheRead)}</span>
           {cacheWrite > 0 ? (
             <>
-              <span className="text-zinc-700 mx-1">·</span>
+              <span className="text-zinc-700 mx-1" aria-hidden="true">
+                ·
+              </span>
               <span title="cache write">cw {formatTokens(cacheWrite)}</span>
             </>
           ) : null}

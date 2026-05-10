@@ -23,11 +23,13 @@ export function toRowData(n: ApiTreeNode): TreeRowData {
 }
 
 /**
- * Compact ~38px row. Mobile-first: avoids horizontal overflow at 380px by
- * truncating the label and stacking subtree-rollup on a second line.
+ * Tree row renderer. Targeted at 380px viewport:
  *
- * Navigation is handled by the Tree's onActivate prop in the parent — this
- * renderer is a pure visual component with no extra props.
+ * - Whole row is the tap target (≥44px tall via the rowHeight prop on Tree).
+ * - Caret is a separate ≥32px-wide button so expand/collapse doesn't fight
+ *   navigation.
+ * - Tokens compress to a single self/subtree line; cache numbers stay on the
+ *   detail page so they don't crowd the tree label.
  */
 export default function TreeRow({ node, style }: NodeRendererProps<TreeRowData>) {
   const data = node.data;
@@ -43,8 +45,9 @@ export default function TreeRow({ node, style }: NodeRendererProps<TreeRowData>)
     <div
       role="treeitem"
       aria-selected={node.isSelected}
+      aria-expanded={hasChildren ? node.isOpen : undefined}
       style={style}
-      className="flex items-center gap-1 px-1 py-1 hover:bg-zinc-900/60 cursor-pointer text-xs"
+      className="flex items-center gap-1.5 pr-2 hover:bg-zinc-900/60 cursor-pointer text-xs rounded-sm"
       onClick={() => {
         if (hasChildren) node.toggle();
         node.select();
@@ -60,8 +63,10 @@ export default function TreeRow({ node, style }: NodeRendererProps<TreeRowData>)
       <button
         type="button"
         aria-label={node.isOpen ? "collapse" : "expand"}
-        className={`w-4 text-zinc-500 ${hasChildren ? "" : "opacity-0"}`}
-        tabIndex={-1}
+        className={`shrink-0 inline-flex items-center justify-center w-8 h-full text-zinc-500 hover:text-zinc-200 ${
+          hasChildren ? "" : "opacity-0 pointer-events-none"
+        }`}
+        tabIndex={hasChildren ? 0 : -1}
         onClick={(e) => {
           e.stopPropagation();
           node.toggle();
@@ -69,17 +74,17 @@ export default function TreeRow({ node, style }: NodeRendererProps<TreeRowData>)
       >
         {hasChildren ? (node.isOpen ? "▾" : "▸") : "·"}
       </button>
-      <StatePill state={session.state} />
+      <StatePill state={session.state} className="shrink-0" />
       <span className="flex-1 min-w-0 truncate text-zinc-200">
         {data.name}
         {session.last_tool_name ? (
           <span className="text-zinc-500 ml-1">· {session.last_tool_name}</span>
         ) : null}
       </span>
-      <span className="text-zinc-500 hidden sm:inline">
+      <span className="text-zinc-500 hidden sm:inline shrink-0">
         <ElapsedClock since={session.started_at} live={live} />
       </span>
-      <span className="text-right tabular-nums font-mono ml-1 leading-tight">
+      <span className="text-right tabular-nums font-mono ml-1 leading-tight shrink-0">
         <span className="text-zinc-300">self {formatTokens(ownTotal)}</span>
         {hasChildren ? (
           <span className="block text-[10px] text-zinc-500">subtree {formatTokens(subTotal)}</span>

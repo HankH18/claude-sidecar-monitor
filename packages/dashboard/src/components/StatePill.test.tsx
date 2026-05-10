@@ -24,6 +24,20 @@ describe("StatePill", () => {
     expect(el.className).toMatch(/animate-pulse/);
   });
 
+  it("hung state additionally gets the pulsing ring class (not just the dot)", () => {
+    // Round-1 design contract: hung sessions deserve a stronger signal than
+    // a fading icon — they get a red box-shadow ring driven by the
+    // `animate-pulse-ring` keyframes (defined in theme.css). Verify both the
+    // class is applied AND that it's only on hung (running shouldn't have it).
+    const { rerender, container } = render(<StatePill state="hung" />);
+    const hung = container.firstElementChild as HTMLElement;
+    expect(hung.className).toMatch(/animate-pulse-ring/);
+
+    rerender(<StatePill state="running" />);
+    const running = container.firstElementChild as HTMLElement;
+    expect(running.className).not.toMatch(/animate-pulse-ring/);
+  });
+
   it("renders waiting_user with the bell icon", () => {
     render(<StatePill state="waiting_user" />);
     const el = screen.getByLabelText(/session state: waiting/i);

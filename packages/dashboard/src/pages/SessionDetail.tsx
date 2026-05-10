@@ -12,6 +12,7 @@ import { useMock } from "../api/mode";
 import type { Session, SessionDetail as SessionDetailT } from "../api/types";
 import DiffViewer from "../components/DiffViewer";
 import ElapsedClock from "../components/ElapsedClock";
+import EmptyState from "../components/EmptyState";
 import StatePill from "../components/StatePill";
 import TokenBadge from "../components/TokenBadge";
 
@@ -99,8 +100,8 @@ function CopyButton({ text }: { text: string }) {
           // Clipboard may not be available (test env). Silently fail.
         }
       }}
-      className="text-[10px] text-zinc-500 hover:text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-800"
-      aria-label="copy"
+      className="inline-flex items-center justify-center min-h-9 min-w-11 px-2 text-[11px] text-zinc-400 hover:text-zinc-100 rounded border border-zinc-800 hover:bg-zinc-800/60"
+      aria-label={copied ? "copied" : "copy message"}
     >
       {copied ? "copied" : "copy"}
     </button>
@@ -109,7 +110,7 @@ function CopyButton({ text }: { text: string }) {
 
 function TimelineStrip({ entries }: { entries: TimelineEntry[] }) {
   if (entries.length === 0) {
-    return <p className="text-[11px] text-zinc-600">No events yet.</p>;
+    return <p className="text-[11px] text-zinc-600 px-1">No events yet.</p>;
   }
   return (
     <div className="overflow-x-auto -mx-1 px-1" aria-label="event timeline">
@@ -125,7 +126,7 @@ function TimelineStrip({ entries }: { entries: TimelineEntry[] }) {
           return (
             <li
               key={e.event_id}
-              className={`text-[10px] font-mono px-2 py-1 rounded border ${color}`}
+              className={`text-[10px] font-mono px-2 py-1.5 rounded border ${color}`}
             >
               <div>{e.tool_name ?? e.event_name}</div>
               {e.duration_ms !== undefined ? (
@@ -182,10 +183,37 @@ function MessageBlock({ m }: { m: TranscriptMessage }) {
 
 function SkeletonDetail() {
   return (
-    <div className="space-y-3" aria-busy="true">
-      <div className="h-6 w-32 rounded bg-zinc-900/60 animate-pulse" />
-      <div className="h-12 rounded-md bg-zinc-900/60 animate-pulse" />
-      <div className="h-24 rounded-md bg-zinc-900/60 animate-pulse" />
+    <div className="space-y-4" aria-busy="true">
+      {/* back link + title row */}
+      <div className="space-y-2">
+        <div className="h-3 w-12 rounded bg-zinc-800/60 animate-pulse" />
+        <div className="flex items-center justify-between gap-2">
+          <div className="space-y-1.5 flex-1">
+            <div className="h-5 w-32 rounded bg-zinc-800/60 animate-pulse" />
+            <div className="h-3 w-48 rounded bg-zinc-800/40 animate-pulse" />
+          </div>
+          <div className="h-6 w-20 rounded-full bg-zinc-800/60 animate-pulse" />
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="h-3 w-12 rounded bg-zinc-800/40 animate-pulse" />
+          <div className="space-y-1">
+            <div className="h-3 w-20 rounded bg-zinc-800/60 animate-pulse" />
+            <div className="h-2 w-12 rounded bg-zinc-800/40 animate-pulse" />
+          </div>
+        </div>
+      </div>
+      {/* timeline */}
+      <div className="flex gap-1 overflow-hidden">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-9 w-16 rounded bg-zinc-800/50 animate-pulse" />
+        ))}
+      </div>
+      {/* transcript blocks */}
+      <div className="space-y-2">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-20 rounded-md bg-zinc-800/40 animate-pulse" />
+        ))}
+      </div>
     </div>
   );
 }
@@ -285,8 +313,11 @@ export default function SessionDetail() {
     }
     return (
       <div className="space-y-2">
-        <Link to="/" className="text-xs text-emerald-400 hover:underline">
-          ← back
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1 min-h-11 -mx-1 px-1 text-xs text-emerald-300 hover:text-emerald-200"
+        >
+          <span aria-hidden="true">←</span> back
         </Link>
         <p className="text-sm text-zinc-500">Session not found.</p>
       </div>
@@ -298,8 +329,11 @@ export default function SessionDetail() {
   return (
     <div className="space-y-4">
       <header className="space-y-2">
-        <Link to="/" className="text-xs text-emerald-400 hover:underline">
-          ← back
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1 min-h-11 -mx-1 px-1 text-xs text-emerald-300 hover:text-emerald-200"
+        >
+          <span aria-hidden="true">←</span> back
         </Link>
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
@@ -333,9 +367,13 @@ export default function SessionDetail() {
       <section aria-label="transcript" className="space-y-2">
         <h2 className="text-xs uppercase tracking-wide text-zinc-500">Transcript</h2>
         {transcript.length === 0 ? (
-          <p className="text-sm text-zinc-600">No transcript yet.</p>
+          <EmptyState
+            illustration="transcript"
+            title="No transcript yet"
+            message="Once the agent emits its first turn, prompts and tool I/O will stream in here in real time."
+          />
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {transcript.map((m) => (
               <MessageBlock key={m.message_id} m={m} />
             ))}

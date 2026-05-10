@@ -6,6 +6,7 @@ interface PillSpec {
   text: string;
   bg: string;
   ring: string;
+  /** When true, animate the icon dot + add a pulsing red ring around the pill. */
   pulse?: boolean;
 }
 
@@ -36,7 +37,7 @@ const PILLS: Record<SessionState, PillSpec> = {
     icon: "⚠",
     text: "text-red-300",
     bg: "bg-red-500/20",
-    ring: "ring-1 ring-red-500/50",
+    ring: "ring-1 ring-red-500/60",
     pulse: true,
   },
   waiting_user: {
@@ -62,13 +63,24 @@ export interface StatePillProps {
   className?: string;
 }
 
+/**
+ * Compact status badge.
+ *
+ * The pill carries three signals so it remains legible regardless of channel:
+ *   1. background tint (color)         — quick scan
+ *   2. icon glyph                       — colorblind / monochrome fallback
+ *   3. text label                       — screen readers + clarity
+ *
+ * Hung sessions get an extra pulsing ring (`animate-pulse-ring`, defined in
+ * `theme.css`) — a stronger signal than `animate-pulse`'s opacity dip.
+ */
 export default function StatePill({ state, label, className = "" }: StatePillProps) {
   const spec = PILLS[state] ?? PILLS.done;
   const text = label ?? spec.label;
   return (
     <output
       aria-label={`session state: ${text}`}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${spec.bg} ${spec.text} ${spec.ring} ${spec.pulse ? "animate-pulse" : ""} ${className}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${spec.bg} ${spec.text} ${spec.ring} ${spec.pulse ? "animate-pulse animate-pulse-ring" : ""} ${className}`}
     >
       <span aria-hidden="true">{spec.icon}</span>
       <span>{text}</span>
