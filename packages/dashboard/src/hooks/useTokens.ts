@@ -11,6 +11,7 @@ export function useTokens(): {
   data: TokensResponse | null;
   loading: boolean;
   error: string | null;
+  refetch: () => Promise<void>;
 } {
   const mock = useMock();
   const [data, setData] = useState<TokensResponse | null>(null);
@@ -75,5 +76,14 @@ export function useTokens(): {
     };
   }, [mock, lastEvent, fetchTokens]);
 
-  return { data, loading, error };
+  const refetch = useCallback(async () => {
+    if (mock) {
+      setData(mockTokens());
+      return;
+    }
+    const signal = { cancelled: false };
+    await fetchTokens(signal);
+  }, [mock, fetchTokens]);
+
+  return { data, loading, error, refetch };
 }

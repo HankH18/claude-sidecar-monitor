@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ApiCallError, apiGet, withRetry } from "../api/client";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../api/mock";
 import { useMock } from "../api/mode";
 import type { Session, SessionDetail as SessionDetailT } from "../api/types";
+import Breadcrumbs from "../components/Breadcrumbs";
 import DiffViewer from "../components/DiffViewer";
 import ElapsedClock from "../components/ElapsedClock";
 import EmptyState from "../components/EmptyState";
@@ -326,15 +327,24 @@ export default function SessionDetail() {
 
   const live = session.state === "running" || session.state === "tool";
 
+  // Breadcrumbs: Live › <project> › <agent_type>. The middle crumb deep-links
+  // to /projects/<encoded> so the user can navigate up one level instead of
+  // landing back at the Live overview.
+  const projectLabel =
+    session.project_label ?? session.worktree_root.split("/").pop() ?? session.worktree_root;
+  const projectHref = `/projects/${encodeURIComponent(session.worktree_root)}`;
+
   return (
     <div className="space-y-4">
+      <Breadcrumbs
+        items={[
+          { label: "Live", to: "/" },
+          { label: projectLabel, to: projectHref },
+          { label: session.agent_type ?? "session" },
+        ]}
+      />
+
       <header className="space-y-2">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1 min-h-11 -mx-1 px-1 text-xs text-emerald-300 hover:text-emerald-200"
-        >
-          <span aria-hidden="true">←</span> back
-        </Link>
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <h1 className="text-base font-semibold text-zinc-100 truncate">
@@ -373,13 +383,187 @@ export default function SessionDetail() {
             message="Once the agent emits its first turn, prompts and tool I/O will stream in here in real time."
           />
         ) : (
-          <div className="space-y-3">
-            {transcript.map((m) => (
-              <MessageBlock key={m.message_id} m={m} />
-            ))}
-          </div>
+          <Transcript transcript={transcript} />
         )}
       </section>
     </div>
   );
+}
+
+/**
+ * Transcript with a right-edge sticky scrubber + jump-to-latest CTA + j/k
+ * keyboard navigation. Splitting this into its own component keeps the
+ * (otherwise large) parent focused on data fetching.
+ */
+function Transcript({ transcript }: { transcript: TranscriptMessage[] }) {
+  const refs = useRef<Array<HTMLElement | null>>([]);
+  const [activeIndex, setActiveIndex] = useState(transcript.length - 1);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+
+  // Keep the refs array in sync with the transcript length so callbacks
+  // never read past the end.
+  if (refs.current.length !== transcript.length) {
+    refs.current = transcript.map((_, i) => refs.current[i] ?? null);
+  }
+
+  const scrollToIndex = useCallback((idx: number) => {
+    const el = refs.current[idx];
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
+  // j / k step through messages. Skip when the user is typing in an input.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
+      if (
+        tag === "input" ||
+        tag === "textarea" ||
+        (e.target as HTMLElement | null)?.isContentEditable
+      )
+        return;
+      if (e.key === "j") {
+        e.preventDefault();
+        setActiveIndex((i) => {
+          const next = Math.min(transcript.length - 1, i + 1);
+          scrollToIndex(next);
+          return next;
+        });
+      } else if (e.key === "k") {
+        e.preventDefault();
+        setActiveIndex((i) => {
+          const next = Math.max(0, i - 1);
+          scrollToIndex(next);
+          return next;
+        });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [transcript.length, scrollToIndex]);
+
+  // Watch the last message's visibility so we can flip "jump to latest" on/off.
+  useEffect(() => {
+    if (transcript.length === 0) return;
+    const last = refs.current[transcript.length - 1];
+    if (!last || typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          setShowJumpToLatest(!entry.isIntersecting);
+        }
+      },
+      { threshold: 0.05 },
+    );
+    obs.observe(last);
+    return () => obs.disconnect();
+  }, [transcript.length]);
+
+  return (
+    <div className="relative flex gap-2">
+      <div className="flex-1 min-w-0 space-y-3" data-testid="transcript-list">
+        {transcript.map((m, i) => (
+          <div
+            key={m.message_id}
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
+          >
+            <MessageBlock m={m} />
+          </div>
+        ))}
+      </div>
+
+      <Scrubber
+        transcript={transcript}
+        activeIndex={activeIndex}
+        onJump={(i) => {
+          setActiveIndex(i);
+          scrollToIndex(i);
+        }}
+      />
+
+      {showJumpToLatest ? (
+        <button
+          type="button"
+          onClick={() => {
+            const last = transcript.length - 1;
+            setActiveIndex(last);
+            scrollToIndex(last);
+          }}
+          className="fixed bottom-4 right-4 z-10 inline-flex items-center min-h-11 px-3 rounded-full bg-emerald-500 text-emerald-950 text-xs font-medium shadow-lg hover:bg-emerald-400"
+          data-testid="jump-to-latest"
+        >
+          ↓ Jump to latest
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Sticky right-edge scrubber. Each marker is one transcript message; the
+ * letter codes (U/A/T/S) come from the role so the user can scan to a
+ * specific kind of turn (skip past tool results to the next user prompt).
+ */
+function Scrubber({
+  transcript,
+  activeIndex,
+  onJump,
+}: {
+  transcript: TranscriptMessage[];
+  activeIndex: number;
+  onJump(i: number): void;
+}) {
+  if (transcript.length <= 4) return null; // not worth the chrome
+  return (
+    <nav
+      aria-label="transcript scrubber"
+      className="sticky top-28 self-start shrink-0 hidden sm:flex flex-col gap-0.5 max-h-[60vh] overflow-y-auto pr-1"
+      data-testid="transcript-scrubber"
+    >
+      {transcript.map((m, i) => {
+        const code = roleCode(m.role);
+        const tone = roleTone(m.role);
+        const active = i === activeIndex;
+        return (
+          <button
+            key={m.message_id}
+            type="button"
+            onClick={() => onJump(i)}
+            aria-label={`jump to message ${i + 1} (${m.role})`}
+            className={`min-h-6 min-w-6 px-1 inline-flex items-center justify-center text-[9px] font-mono rounded ${tone} ${active ? "ring-1 ring-emerald-400" : ""}`}
+          >
+            {code}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function roleCode(role: TranscriptMessage["role"]): string {
+  switch (role) {
+    case "user":
+      return "U";
+    case "assistant":
+      return "A";
+    case "tool_result":
+      return "T";
+    case "system":
+      return "S";
+  }
+}
+
+function roleTone(role: TranscriptMessage["role"]): string {
+  switch (role) {
+    case "user":
+      return "bg-emerald-500/15 text-emerald-300";
+    case "assistant":
+      return "bg-zinc-800/80 text-zinc-300";
+    case "tool_result":
+      return "bg-blue-500/15 text-blue-300";
+    case "system":
+      return "bg-yellow-500/15 text-yellow-300";
+  }
 }

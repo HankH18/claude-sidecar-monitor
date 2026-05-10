@@ -2,7 +2,9 @@ import { useMemo } from "react";
 import { Link } from "react-router";
 import type { TokensResponse } from "../api/types";
 import EmptyState from "../components/EmptyState";
+import PullToRefreshIndicator from "../components/PullToRefreshIndicator";
 import { formatTokens } from "../components/TokenBadge";
+import { usePullToRefresh } from "../hooks/usePullToRefresh";
 import { useTokens } from "../hooks/useTokens";
 
 interface DayBucket {
@@ -119,8 +121,81 @@ function StackedBarChart({ daily }: { daily: TokensResponse["dailyTotals"] }) {
   );
 }
 
+/**
+ * Tiny sparkline + at-a-glance "today vs 14-day average" signal. The label
+ * flips green when today is below average, amber when comparable (±15%),
+ * red when above. No threshold logic — purely visual signal.
+ */
+function TodaySparkline({ daily }: { daily: TokensResponse["dailyTotals"] }) {
+  const { totals, today, avg } = useMemo(() => {
+    const byDate = new Map<string, number>();
+    for (const row of daily) {
+      const v = row.input + row.output;
+      byDate.set(row.date, (byDate.get(row.date) ?? 0) + v);
+    }
+    const sorted = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const totals = sorted.map(([, v]) => v);
+    const today = totals.length ? totals[totals.length - 1] : 0;
+    // Average over the prior days only (excludes today, since we're
+    // comparing "is today below typical?" vs. a window that includes itself).
+    const prior = totals.slice(0, -1);
+    const avg = prior.length ? prior.reduce((s, v) => s + v, 0) / prior.length : 0;
+    return { totals, today, avg };
+  }, [daily]);
+
+  if (totals.length < 2) return null;
+
+  // Color: green if <=85% of avg, red if >=115%, amber otherwise.
+  const ratio = avg > 0 ? today / avg : 1;
+  const color = ratio <= 0.85 ? "#34d399" : ratio >= 1.15 ? "#f87171" : "#fbbf24";
+  const label = ratio <= 0.85 ? "below avg" : ratio >= 1.15 ? "above avg" : "near avg";
+
+  // Build a tiny SVG polyline.
+  const w = 80;
+  const h = 24;
+  const max = Math.max(1, ...totals);
+  const stepX = totals.length > 1 ? w / (totals.length - 1) : w;
+  const points = totals
+    .map((v, i) => `${(i * stepX).toFixed(2)},${(h - (v / max) * h).toFixed(2)}`)
+    .join(" ");
+  const lastX = (totals.length - 1) * stepX;
+  const lastY = h - (today / max) * h;
+
+  return (
+    <div
+      className="inline-flex items-center gap-2 align-middle"
+      title={`today: ${formatTokens(today)} · 14d avg: ${formatTokens(Math.round(avg))}`}
+    >
+      <svg
+        role="img"
+        aria-label={`today vs 14-day average — ${label}`}
+        width={w}
+        height={h}
+        viewBox={`0 0 ${w} ${h}`}
+        className="block"
+      >
+        <title>today vs 14-day average — {label}</title>
+        <polyline
+          points={points}
+          fill="none"
+          stroke={color}
+          strokeWidth={1.5}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          opacity={0.85}
+        />
+        <circle cx={lastX} cy={lastY} r={2.2} fill={color} />
+      </svg>
+      <span className="text-[11px]" style={{ color }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 export default function Tokens() {
-  const { data, loading } = useTokens();
+  const { data, loading, refetch } = useTokens();
+  const ptr = usePullToRefresh(refetch, { enabled: !loading });
 
   if (loading || !data) {
     return (
@@ -144,9 +219,13 @@ export default function Tokens() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-lg font-semibold text-zinc-100">Tokens</h1>
-        <p className="text-[11px] text-zinc-500 mt-1">
+      <PullToRefreshIndicator pull={ptr.pull} armed={ptr.armed} refreshing={ptr.refreshing} />
+      <header className="space-y-1">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h1 className="text-lg font-semibold text-zinc-100">Tokens</h1>
+          {data.dailyTotals.length > 0 ? <TodaySparkline daily={data.dailyTotals} /> : null}
+        </div>
+        <p className="text-[11px] text-zinc-500">
           Absolute counts; reflects API-reported usage, not billing.
         </p>
       </header>
@@ -155,7 +234,7 @@ export default function Tokens() {
         <EmptyState
           illustration="tokens"
           title="No token usage yet"
-          message="Once an agent makes its first API call, totals roll up here within a few seconds."
+          message="Once an agent makes its first API call, totals roll up here. Token data first appears after a session has had at least one assistant turn."
         />
       ) : null}
 
@@ -260,6 +339,19 @@ export default function Tokens() {
           <p className="text-xs text-zinc-600 px-1">No daily totals available yet.</p>
         )}
       </section>
+
+      <p className="text-[11px] text-zinc-500 leading-relaxed border-t border-zinc-800 pt-4">
+        csm reports per-message API usage. For monthly billing limits, see your{" "}
+        <a
+          href="https://console.anthropic.com/"
+          target="_blank"
+          rel="noreferrer"
+          className="text-zinc-400 hover:text-zinc-200 underline"
+        >
+          Anthropic account
+        </a>
+        .
+      </p>
     </div>
   );
 }

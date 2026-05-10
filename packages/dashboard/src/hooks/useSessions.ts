@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiGet, withRetry } from "../api/client";
 import { mockSessions } from "../api/mock";
 import { useMock } from "../api/mode";
@@ -17,12 +17,27 @@ export function useSessions(): {
   sessions: Session[];
   loading: boolean;
   error: string | null;
+  refetch: () => Promise<void>;
 } {
   const mock = useMock();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { lastEvent } = useStream({ kind: "session_update" });
+
+  const refetch = useCallback(async () => {
+    if (mock) {
+      setSessions([...mockSessions]);
+      return;
+    }
+    try {
+      const res = await withRetry(() => apiGet<StateResponse>("/api/state"));
+      setSessions(res.sessions);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [mock]);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,5 +95,5 @@ export function useSessions(): {
     });
   }, [lastEvent]);
 
-  return { sessions, loading, error };
+  return { sessions, loading, error, refetch };
 }

@@ -1,7 +1,8 @@
-import { useMemo } from "react";
-import { Tree } from "react-arborist";
-import { Link, useNavigate, useParams } from "react-router";
+import { useCallback, useMemo, useRef } from "react";
+import { Tree, type TreeApi } from "react-arborist";
+import { useNavigate, useParams } from "react-router";
 import type { TreeNode as ApiTreeNode, Session } from "../api/types";
+import Breadcrumbs from "../components/Breadcrumbs";
 import EmptyState from "../components/EmptyState";
 import { ProjectSummarySkeleton, TreeSkeleton } from "../components/Skeleton";
 import { formatTokens } from "../components/TokenBadge";
@@ -13,16 +14,34 @@ function flattenSessions(node: ApiTreeNode): Session[] {
   return [node.session, ...node.children.flatMap(flattenSessions)];
 }
 
-/** Compact in-page back affordance with ≥44pt tap target. */
-function BackLink() {
-  return (
-    <Link
-      to="/"
-      className="inline-flex items-center gap-1 min-h-11 -mx-1 px-1 text-xs text-emerald-300 hover:text-emerald-200"
-    >
-      <span aria-hidden="true">←</span> back
-    </Link>
-  );
+const TREE_STATE_PREFIX = "csm.tree.openIds.";
+
+/**
+ * Persist react-arborist's open/closed decisions to localStorage keyed by
+ * worktree_root. Round 1 the tree reset to fully-expanded on every refetch;
+ * for a project with 20+ children this was disorienting since the user's
+ * collapse decisions evaporated each time the SSE stream nudged a refetch.
+ */
+function loadOpenIds(worktreeRoot: string | undefined): Record<string, boolean> | undefined {
+  if (!worktreeRoot || typeof localStorage === "undefined") return undefined;
+  try {
+    const raw = localStorage.getItem(`${TREE_STATE_PREFIX}${worktreeRoot}`);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object") return parsed as Record<string, boolean>;
+  } catch {
+    // Corrupt entry — clobber on next save.
+  }
+  return undefined;
+}
+
+function saveOpenIds(worktreeRoot: string | undefined, ids: Record<string, boolean>): void {
+  if (!worktreeRoot || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(`${TREE_STATE_PREFIX}${worktreeRoot}`, JSON.stringify(ids));
+  } catch {
+    // Quota / disabled storage; nothing meaningful we can do.
+  }
 }
 
 export default function ProjectDetail() {
@@ -31,6 +50,26 @@ export default function ProjectDetail() {
   const worktreeRoot = encoded ? decodeURIComponent(encoded) : undefined;
   const { tree, loading } = useTree(worktreeRoot);
   const { sessions } = useSessions();
+  const treeRef = useRef<TreeApi<TreeRowData> | null>(null);
+
+  // Snapshot the persisted open-state once per worktree change so we can
+  // hand it to react-arborist via `initialOpenState`. Mutations are saved
+  // back through the onToggle callback.
+  const initialOpenState = useMemo(() => loadOpenIds(worktreeRoot), [worktreeRoot]);
+
+  const persistOpenState = useCallback(() => {
+    if (!treeRef.current) return;
+    // react-arborist exposes a Map-like via .openState — copy the unfiltered
+    // map (the only one we use; filtered would require a search term) into
+    // a plain serializable object.
+    const map = treeRef.current.openState;
+    const ids: Record<string, boolean> = {};
+    for (const [id, open] of Object.entries(map)) ids[id] = !!open;
+    saveOpenIds(worktreeRoot, ids);
+  }, [worktreeRoot]);
+
+  // The persisted state is handed to <Tree> via initialOpenState, which
+  // honors it across data refetches. No manual re-apply needed.
 
   const rows = useMemo<TreeRowData[]>(() => {
     if (!tree) return [];
@@ -93,7 +132,7 @@ export default function ProjectDetail() {
   if (!tree) {
     return (
       <div className="space-y-3">
-        <BackLink />
+        <Breadcrumbs items={[{ label: "Live", to: "/" }, { label: "Project" }]} />
         <h1 className="text-lg font-semibold text-zinc-100">Project</h1>
         <p className="text-sm text-zinc-500">Project not found.</p>
       </div>
@@ -102,8 +141,8 @@ export default function ProjectDetail() {
 
   return (
     <div className="space-y-5">
+      <Breadcrumbs items={[{ label: "Live", to: "/" }, { label: projectLabel }]} />
       <header className="space-y-1">
-        <BackLink />
         <h1 className="text-lg font-semibold text-zinc-100">{projectLabel}</h1>
         <p className="text-[11px] text-zinc-500 break-all">{worktreeRoot}</p>
       </header>
@@ -132,7 +171,9 @@ export default function ProjectDetail() {
         ) : (
           <Tree<TreeRowData>
             data={rows}
+            ref={treeRef}
             openByDefault
+            initialOpenState={initialOpenState}
             rowHeight={44}
             indent={16}
             width="100%"
@@ -140,6 +181,7 @@ export default function ProjectDetail() {
             disableDrag
             disableDrop
             disableEdit
+            onToggle={persistOpenState}
             onActivate={(node) => {
               const id = node.data.id;
               if (id.startsWith("__project__") || id.startsWith("__empty__")) return;

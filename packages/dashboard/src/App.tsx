@@ -1,5 +1,7 @@
 import { Link, NavLink, Route, Routes } from "react-router";
+import ConnectionBanner from "./components/ConnectionBanner";
 import ConnectionStatus from "./components/ConnectionStatus";
+import { ToastProvider } from "./components/Toast";
 import Overview from "./pages/Overview";
 import ProjectDetail from "./pages/ProjectDetail";
 import SessionDetail from "./pages/SessionDetail";
@@ -30,37 +32,42 @@ function NavTab({ to, label }: { to: string; label: string }) {
 
 export default function App() {
   return (
-    <div className="min-h-dvh flex flex-col">
-      <header className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 pt-safe">
-        <div className="px-4 py-3 flex items-center justify-between gap-3">
-          <Link
-            to="/"
-            className="font-semibold text-zinc-100 inline-flex items-center gap-2 min-h-11 -my-1.5"
-          >
-            <span aria-hidden="true" className="text-emerald-400 text-base leading-none">
-              ●
-            </span>
-            <span>Sidecar</span>
-          </Link>
-          <ConnectionStatus />
-        </div>
-        <nav className="flex border-t border-zinc-800" aria-label="primary">
-          <NavTab to="/" label="Live" />
-          <NavTab to="/tokens" label="Tokens" />
-          <NavTab to="/settings" label="Settings" />
-        </nav>
-      </header>
-      <main className="flex-1 px-4 py-5 pb-safe">
-        <Routes>
-          <Route path="/" element={<Overview />} />
-          <Route path="/projects/:encoded" element={<ProjectDetail />} />
-          <Route path="/sessions/:id" element={<SessionDetail />} />
-          <Route path="/tokens" element={<Tokens />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </main>
-    </div>
+    <ToastProvider>
+      <div className="min-h-dvh flex flex-col">
+        <header className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 pt-safe">
+          <div className="px-4 py-3 flex items-center justify-between gap-3">
+            <Link
+              to="/"
+              className="font-semibold text-zinc-100 inline-flex items-center gap-2 min-h-11 -my-1.5"
+            >
+              {/*
+                Round 2: dropped the always-emerald brand dot — it duplicated
+                the ConnectionStatus indicator next to it and confused users
+                when offline (green dot + red dot side-by-side).
+              */}
+              <span>Sidecar</span>
+            </Link>
+            <ConnectionStatus />
+          </div>
+          <nav className="flex border-t border-zinc-800" aria-label="primary">
+            <NavTab to="/" label="Live" />
+            <NavTab to="/tokens" label="Tokens" />
+            <NavTab to="/settings" label="Settings" />
+          </nav>
+        </header>
+        <ConnectionBanner />
+        <main className="flex-1 px-4 py-5 pb-safe">
+          <Routes>
+            <Route path="/" element={<Overview />} />
+            <Route path="/projects/:encoded" element={<ProjectDetail />} />
+            <Route path="/sessions/:id" element={<SessionDetail />} />
+            <Route path="/tokens" element={<Tokens />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </main>
+      </div>
+    </ToastProvider>
   );
 }
 

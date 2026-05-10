@@ -3,10 +3,13 @@ import { Link } from "react-router";
 import type { Session } from "../api/types";
 import ElapsedClock from "../components/ElapsedClock";
 import EmptyState from "../components/EmptyState";
+import PullToRefreshIndicator from "../components/PullToRefreshIndicator";
 import { ProjectGroupSkeleton } from "../components/Skeleton";
 import StatePill from "../components/StatePill";
 import TokenBadge from "../components/TokenBadge";
+import { usePullToRefresh } from "../hooks/usePullToRefresh";
 import { useSessions } from "../hooks/useSessions";
+import { formatRelative } from "../lib/time";
 
 const LIVE_STATES = new Set<Session["state"]>(["running", "tool", "waiting_user", "hung", "idle"]);
 
@@ -33,7 +36,8 @@ function staleLabelFor(s: Session): string | undefined {
 }
 
 export default function Overview() {
-  const { sessions, loading } = useSessions();
+  const { sessions, loading, refetch } = useSessions();
+  const ptr = usePullToRefresh(refetch, { enabled: !loading });
 
   const grouped = useMemo(() => {
     const live = sessions.filter((s) => LIVE_STATES.has(s.state));
@@ -71,6 +75,7 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
+      <PullToRefreshIndicator pull={ptr.pull} armed={ptr.armed} refreshing={ptr.refreshing} />
       <header>
         <h1 className="text-lg font-semibold text-zinc-100">Live agents</h1>
         <p className="text-xs text-zinc-500 mt-1">
@@ -84,6 +89,28 @@ export default function Overview() {
           illustration="agents"
           title="No agents running"
           message="Start a Claude Code session — the receiver listens at :8765 and sessions appear here within ~2s."
+          action={
+            <div className="space-y-2 text-left max-w-xs">
+              <p className="text-[11px] text-zinc-500">
+                First-run? After installing csm, verify hooks fire:
+              </p>
+              <pre className="bg-zinc-900/80 border border-zinc-800 rounded text-[11px] text-zinc-300 px-2 py-1.5 font-mono whitespace-pre-wrap break-all">
+                csm doctor --gate-test
+              </pre>
+              <p className="text-[11px] text-zinc-500">
+                Or read the{" "}
+                <a
+                  href="https://github.com/anthropics/claude-sidecar-monitor#quickstart"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-emerald-300 hover:text-emerald-200 underline"
+                >
+                  quickstart
+                </a>
+                .
+              </p>
+            </div>
+          }
         />
       ) : (
         <div className="space-y-5">
@@ -145,7 +172,14 @@ function SessionRow({ s }: { s: Session }) {
             ) : null}
           </div>
           <div className="text-[11px] text-zinc-500 truncate mt-0.5">
-            {s.primary_model ?? "model?"} · <ElapsedClock since={s.started_at} live={live} />
+            {s.primary_model ?? "model?"} ·{" "}
+            {s.state === "done" && s.completed_at ? (
+              <span title={new Date(s.completed_at).toLocaleString()}>
+                {formatRelative(s.completed_at)}
+              </span>
+            ) : (
+              <ElapsedClock since={s.started_at} live={live} />
+            )}
           </div>
         </div>
         <TokenBadge

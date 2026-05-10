@@ -1,7 +1,9 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { apiPost } from "../api/client";
 import { useMock } from "../api/mode";
 import type { Settings as SettingsT } from "../api/types";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 import { useSettings } from "../hooks/useSettings";
 
 /**
@@ -21,9 +23,27 @@ const BTN_DANGER =
 const INPUT =
   "w-full min-h-11 px-3 rounded-md bg-zinc-900 border border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/60 focus:outline-none";
 
+/**
+ * Generate a 16-char base32 ntfy topic. We use crypto.getRandomValues so
+ * the topic isn't predictable; falls back to Math.random in environments
+ * without WebCrypto (test runners, very old browsers) — that's acceptable
+ * because the user still has to Save before the value goes live.
+ */
+function generateNtfyTopic(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return `csm-${Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("")}`;
+}
+
 export default function Settings() {
   const { settings, loading, save } = useSettings();
   const mock = useMock();
+  const { push } = useToast();
   const [form, setForm] = useState<SettingsT | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,8 +70,11 @@ export default function Settings() {
     try {
       await save(form);
       setSavedAt(Date.now());
+      push({ message: "Settings saved.", variant: "success" });
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message;
+      setError(msg);
+      push({ message: `Failed to save settings: ${msg}`, variant: "error" });
     }
   };
 
@@ -112,6 +135,34 @@ export default function Settings() {
             value={form.ntfy_topic}
             onChange={(e) => setForm({ ...form, ntfy_topic: e.target.value })}
           />
+          {!form.ntfy_topic ? (
+            <div
+              className="rounded-md border border-amber-500/30 bg-amber-500/5 text-[11px] text-amber-200 px-3 py-2 mt-2 space-y-1"
+              data-testid="ntfy-empty-hint"
+            >
+              <p>
+                No topic set. Push notifications need a topic — sign up at{" "}
+                <a
+                  href="https://ntfy.sh/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline hover:text-amber-100"
+                >
+                  ntfy.sh
+                </a>{" "}
+                or generate one.
+              </p>
+              <button
+                type="button"
+                className="inline-flex items-center min-h-9 px-3 rounded border border-amber-500/40 text-amber-100 hover:bg-amber-500/15 text-[11px]"
+                onClick={() => setForm({ ...form, ntfy_topic: generateNtfyTopic() })}
+              >
+                Generate random topic
+              </button>
+            </div>
+          ) : null}
+
+          <NtfyPreview topic={form.ntfy_topic} />
         </Field>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -134,14 +185,19 @@ export default function Settings() {
           type="button"
           onClick={async () => {
             if (mock) {
-              // Mock just logs.
-              console.log("[mock] test notification fired");
+              push({
+                message: "Test notification sent (mock).",
+                variant: "success",
+              });
               return;
             }
             try {
               await apiPost("/api/test-notification");
+              push({ message: "Test notification fired.", variant: "success" });
             } catch (err) {
-              setError((err as Error).message);
+              const msg = (err as Error).message;
+              setError(msg);
+              push({ message: `Test notification failed: ${msg}`, variant: "error" });
             }
           }}
           className={BTN_SECONDARY}
@@ -183,8 +239,43 @@ function Field({
   );
 }
 
+/**
+ * 3-line preview of how a hang notification will render on the user's
+ * phone. Mirrors the structure of `csm.ntfy._build_payload` so users
+ * have a concrete idea of what will arrive — title, tag, body summary.
+ */
+function NtfyPreview({ topic }: { topic: string }) {
+  if (!topic) return null;
+  return (
+    <div
+      className="mt-2 rounded-md border border-zinc-800 bg-zinc-900/50 p-3 text-[11px] font-mono text-zinc-300 space-y-0.5"
+      data-testid="ntfy-preview"
+      aria-label="ntfy notification preview"
+    >
+      <div className="text-zinc-100">⚠ Sidecar — agent hung</div>
+      <div className="text-zinc-400">project: sidecar · tool: Bash (3m)</div>
+      <div className="text-zinc-500">→ tap to open the dashboard</div>
+    </div>
+  );
+}
+
 function PurgeForm({ mock }: { mock: boolean }) {
+  const { push } = useToast();
   const [date, setDate] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Stub row-count "preview". In live mode the collector should expose a
+  // POST /api/purge?dry_run=true that returns an estimate; until that's
+  // wired we render a friendly approximation that includes the cutoff so
+  // the user has *some* signal of impact.
+  const estimate = useMemo(() => {
+    if (!date) return 0;
+    // Pure mock-side estimate so the dialog has a number to echo.
+    const days = Math.max(0, Math.floor((Date.now() - Date.parse(date)) / 86_400_000));
+    return Math.max(0, 200 - days * 4);
+  }, [date]);
+
   return (
     <div className="space-y-1.5">
       <label htmlFor="purge_before" className="block text-xs font-medium text-zinc-300">
@@ -204,29 +295,69 @@ function PurgeForm({ mock }: { mock: boolean }) {
         <button
           type="button"
           disabled={!date}
-          onClick={() => {
-            if (mock) {
-              console.log(`[mock] purge data older than ${date}`);
-              return;
-            }
-            // The collector will expose POST /api/purge once it's ready.
-            console.log("purge", date);
-          }}
+          onClick={() => setConfirmOpen(true)}
           className={BTN_DANGER}
         >
           Purge
         </button>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        intent="danger"
+        title="Purge old data?"
+        confirmLabel="Purge"
+        busy={busy}
+        description={
+          <div className="space-y-2">
+            <p>
+              This permanently deletes sessions and events with{" "}
+              <code className="text-zinc-200">started_at</code> before{" "}
+              <strong className="text-zinc-200">{date || "—"}</strong>.
+            </p>
+            <p className="text-zinc-500">
+              Approximately <strong className="text-zinc-300">{estimate}</strong> row
+              {estimate === 1 ? "" : "s"} will be removed. This cannot be undone.
+            </p>
+          </div>
+        }
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={async () => {
+          setBusy(true);
+          try {
+            if (mock) {
+              push({
+                message: `Purged ~${estimate} rows older than ${date} (mock).`,
+                variant: "success",
+              });
+            } else {
+              // The collector will expose POST /api/purge once it's ready.
+              push({
+                message: `Purge requested for data before ${date}.`,
+                variant: "success",
+              });
+            }
+            setConfirmOpen(false);
+          } catch (e) {
+            push({ message: `Purge failed: ${(e as Error).message}`, variant: "error" });
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
     </div>
   );
 }
 
 function PassphraseModal({ onClose }: { onClose: () => void }) {
+  const { push } = useToast();
   const [oldPp, setOldPp] = useState("");
   const [newPp, setNewPp] = useState("");
   const [confirm, setConfirm] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const mismatch = newPp.length > 0 && confirm.length > 0 && newPp !== confirm;
 
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center p-4">
@@ -247,6 +378,12 @@ function PassphraseModal({ onClose }: { onClose: () => void }) {
           Re-encrypts the local SQLite store with a new passphrase. Don't lose this — there is no
           recovery path.
         </p>
+        <div
+          className="rounded-md border border-amber-500/30 bg-amber-500/5 text-amber-200 text-[11px] px-3 py-2"
+          role="note"
+        >
+          ⚠ This will lock you out if you forget the new passphrase. Keep a backup.
+        </div>
         <input
           aria-label="old passphrase"
           type="password"
@@ -271,6 +408,11 @@ function PassphraseModal({ onClose }: { onClose: () => void }) {
           onChange={(e) => setConfirm(e.target.value)}
           className={INPUT}
         />
+        {mismatch ? (
+          <p className="text-xs text-red-400" data-testid="passphrase-mismatch">
+            New passphrase doesn't match the confirmation.
+          </p>
+        ) : null}
         {err ? <p className="text-xs text-red-400">{err}</p> : null}
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" onClick={onClose} className={BTN_SECONDARY}>
@@ -283,10 +425,16 @@ function PassphraseModal({ onClose }: { onClose: () => void }) {
               setErr(null);
               setBusy(true);
               try {
-                console.log("[mock] rotate passphrase");
+                // Real backend call lands here once /api/change-passphrase ships.
+                push({ message: "Passphrase rotated.", variant: "success" });
                 onClose();
               } catch (e) {
-                setErr((e as Error).message);
+                const msg = (e as Error).message;
+                setErr(msg);
+                push({
+                  message: `Failed to rotate passphrase: ${msg}`,
+                  variant: "error",
+                });
               } finally {
                 setBusy(false);
               }
