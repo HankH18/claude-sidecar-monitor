@@ -63,7 +63,13 @@ def connect(
     path = db_path if db_path is not None else Paths.from_env().db
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-    conn = cast(Connection, sqlcipher3.connect(str(path), isolation_level=None))
+    # ``check_same_thread=False`` so the FastAPI ``asyncio.to_thread`` worker
+    # pool can use the connection. With WAL mode this is safe for many
+    # readers and a few writers — SQLite serialises writes itself.
+    conn = cast(
+        Connection,
+        sqlcipher3.connect(str(path), isolation_level=None, check_same_thread=False),
+    )
     try:
         if key is not None:
             # Use raw-key syntax (skip SQLCipher's own KDF — we did Argon2id).

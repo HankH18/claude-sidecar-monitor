@@ -1,0 +1,308 @@
+"""Hook event → session state transition logic.
+
+The single ``apply_event`` entry point handles every Claude Code hook
+event and returns the post-transition session row. It also writes to
+``events`` and emits a ``BusEvent`` describing the change.
+
+State machine per docs/spec.md §4.1:
+
+    SessionStart        → running
+    UserPromptSubmit    → running (bumps last_event_at)
+    PreToolUse          → tool   (records last_tool_name)
+    PostToolUse         → running (clears last_tool_name)
+    Notification        → waiting_user (only if permission_request)
+    PreCompact          → unchanged
+    Stop / SessionEnd   → done
+    SubagentStop        → done
+    PermissionRequest   → waiting_user
+    Setup               → unchanged
+
+Unknown events raise :class:`UnknownEventError`. The receiver translates
+that to HTTP 400.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+from csm.bus import BusEvent, bus
+from csm.hooks.worktree import project_label, resolve_worktree
+
+KNOWN_EVENTS: frozenset[str] = frozenset(
+    {
+        "SessionStart",
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PostToolUse",
+        "Notification",
+        "Stop",
+        "SubagentStop",
+        "SessionEnd",
+        "PreCompact",
+        "Setup",
+        "PermissionRequest",
+    }
+)
+
+# State machine targets per event. ``None`` means "leave state alone".
+_TRANSITIONS: dict[str, str | None] = {
+    "SessionStart": "running",
+    "UserPromptSubmit": "running",
+    "PreToolUse": "tool",
+    "PostToolUse": "running",
+    "Notification": None,  # conditional — see logic below
+    "Stop": "done",
+    "SubagentStop": "done",
+    "SessionEnd": "done",
+    "PreCompact": None,
+    "Setup": None,
+    "PermissionRequest": "waiting_user",
+}
+
+
+class UnknownEventError(ValueError):
+    """Raised when the event name isn't in :data:`KNOWN_EVENTS`."""
+
+
+@dataclass(frozen=True)
+class SessionSnapshot:
+    """Compact view of a sessions row for ``BusEvent.data`` payloads."""
+
+    session_id: str
+    state: str
+    last_event_at: str
+    last_event_name: str | None
+    last_tool_name: str | None
+    worktree_root: str
+    parent_session_id: str | None
+
+
+def utcnow_iso() -> str:
+    """ISO 8601 UTC timestamp, second precision (matches schema text columns)."""
+    return datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def apply_event(
+    conn: Any,
+    event_name: str,
+    payload: dict[str, Any],
+    *,
+    received_at: str | None = None,
+) -> SessionSnapshot:
+    """Apply a hook event to the database and emit on the bus.
+
+    Returns a :class:`SessionSnapshot` of the post-transition session row.
+
+    Raises :class:`UnknownEventError` if ``event_name`` isn't recognised.
+    """
+    if event_name not in KNOWN_EVENTS:
+        raise UnknownEventError(event_name)
+
+    received_at = received_at or utcnow_iso()
+    session_id = payload.get("session_id")
+    if not session_id:
+        # Some hook events (e.g. Setup) may legitimately lack session_id;
+        # for now we require one. The receiver will translate this into
+        # a 400 with a clear error.
+        raise ValueError("payload missing session_id")
+
+    # Ensure a row exists (SessionStart creates, others upsert minimal).
+    _ensure_session(conn, session_id, payload, received_at)
+
+    new_state = _resolve_target_state(event_name, payload, conn, session_id)
+    tool_name = payload.get("tool_name")
+    tool_use_id = payload.get("tool_use_id")
+    duration_ms = _resolve_duration_ms(payload)
+
+    # Record the event in `events`.
+    conn.execute(
+        """
+        INSERT INTO events (
+            session_id, event_name, received_at, tool_name, tool_use_id,
+            duration_ms, payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            session_id,
+            event_name,
+            received_at,
+            tool_name,
+            tool_use_id,
+            duration_ms,
+            json.dumps(payload, default=str),
+        ),
+    )
+
+    # Update the sessions row.
+    last_tool = _resolve_last_tool(event_name, tool_name, conn, session_id)
+    conn.execute(
+        """
+        UPDATE sessions
+        SET state           = COALESCE(?, state),
+            last_event_at   = ?,
+            last_event_name = ?,
+            last_tool_name  = ?,
+            completed_at    = COALESCE(completed_at,
+                                       CASE WHEN ? IN ('done') THEN ? ELSE NULL END)
+        WHERE session_id = ?
+        """,
+        (
+            new_state,
+            received_at,
+            event_name,
+            last_tool,
+            new_state,
+            received_at,
+            session_id,
+        ),
+    )
+
+    snapshot = _snapshot(conn, session_id)
+    _emit(snapshot, event_name, received_at)
+    return snapshot
+
+
+# ────────────────────────── helpers ──────────────────────────
+
+
+def _ensure_session(conn: Any, session_id: str, payload: dict[str, Any], received_at: str) -> None:
+    """Insert a minimal sessions row if one doesn't exist."""
+    cwd = payload.get("cwd") or ""
+    worktree = resolve_worktree(cwd) if cwd else ""
+    label = project_label(worktree) if worktree else None
+    transcript_path = payload.get("transcript_path")
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO sessions (
+            session_id, worktree_root, project_label, cwd,
+            transcript_path, last_event_at, started_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (session_id, worktree, label, cwd, transcript_path, received_at, received_at),
+    )
+    # Update transcript_path / cwd / worktree_root if they were missing
+    # before but the new payload has them (e.g. SessionStart arrived
+    # after a tool-use event due to clock skew).
+    if cwd or transcript_path:
+        conn.execute(
+            """
+            UPDATE sessions
+            SET cwd             = COALESCE(NULLIF(cwd, ''), ?),
+                transcript_path = COALESCE(transcript_path, ?),
+                worktree_root   = COALESCE(NULLIF(worktree_root, ''), ?),
+                project_label   = COALESCE(project_label, ?)
+            WHERE session_id = ?
+            """,
+            (cwd, transcript_path, worktree, label, session_id),
+        )
+
+
+def _resolve_target_state(
+    event_name: str, payload: dict[str, Any], conn: Any, session_id: str
+) -> str | None:
+    """Return the new ``state`` value, or ``None`` to leave unchanged."""
+    if event_name == "Notification":
+        # Only permission requests transition to waiting_user.
+        if payload.get("notification_type") == "permission_request":
+            return "waiting_user"
+        return None
+
+    if event_name == "PostToolUse":
+        # Only return to running if we were in tool — don't override
+        # done/hung accidentally.
+        cur = conn.execute(
+            "SELECT state FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        if cur and cur[0] == "tool":
+            return "running"
+        return None
+
+    return _TRANSITIONS.get(event_name)
+
+
+def _resolve_last_tool(
+    event_name: str, tool_name: str | None, conn: Any, session_id: str
+) -> str | None:
+    """Compute the last_tool_name to write back."""
+    if event_name == "PreToolUse":
+        return tool_name
+    if event_name == "PostToolUse":
+        return None  # clear it
+    # For other events leave as-is.
+    cur = conn.execute(
+        "SELECT last_tool_name FROM sessions WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    return cur[0] if cur else None
+
+
+def _resolve_duration_ms(payload: dict[str, Any]) -> int | None:
+    """Pull duration_ms from common payload shapes (best-effort)."""
+    for key in ("duration_ms", "durationMs", "elapsed_ms"):
+        v = payload.get(key)
+        if isinstance(v, int):
+            return v
+    response = payload.get("tool_response")
+    if isinstance(response, dict):
+        for key in ("duration_ms", "durationMs"):
+            v = response.get(key)
+            if isinstance(v, int):
+                return v
+    return None
+
+
+def _snapshot(conn: Any, session_id: str) -> SessionSnapshot:
+    row = conn.execute(
+        """
+        SELECT state, last_event_at, last_event_name, last_tool_name,
+               worktree_root, parent_session_id
+        FROM sessions WHERE session_id = ?
+        """,
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError(f"session {session_id!r} disappeared mid-transition")
+    return SessionSnapshot(
+        session_id=session_id,
+        state=row[0],
+        last_event_at=row[1],
+        last_event_name=row[2],
+        last_tool_name=row[3],
+        worktree_root=row[4],
+        parent_session_id=row[5],
+    )
+
+
+def _emit(snapshot: SessionSnapshot, event_name: str, received_at: str) -> None:
+    """Schedule a bus publish without blocking the receiver thread.
+
+    The bus is asyncio-based; the receiver runs in a worker thread (via
+    FastAPI's threadpool). ``asyncio.run_coroutine_threadsafe`` is the
+    bridge — but in tests we may not have a running loop, so we degrade
+    silently in that case.
+    """
+    import asyncio
+
+    payload = {
+        "session_id": snapshot.session_id,
+        "state": snapshot.state,
+        "last_event_at": snapshot.last_event_at,
+        "last_event_name": snapshot.last_event_name,
+        "last_tool_name": snapshot.last_tool_name,
+        "worktree_root": snapshot.worktree_root,
+        "parent_session_id": snapshot.parent_session_id,
+        "event_name": event_name,
+        "received_at": received_at,
+    }
+    bus_event = BusEvent(
+        kind="session_update",
+        session_id=snapshot.session_id,
+        data=payload,
+    )
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return  # no loop — caller is sync (test path); skip emission
+    asyncio.run_coroutine_threadsafe(bus.publish(bus_event), loop)
