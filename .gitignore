@@ -1,27 +1,74 @@
-# Dependencies
+# --- Node / Bun ---
 node_modules/
 .pnpm-store/
+.bun/
+bun.lockb
 
-# Build outputs
+# --- Python ---
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# --- Build outputs ---
 dist/
 build/
 out/
 
-# IDE
+# --- SQLite (collector store + WAL/SHM siblings) ---
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# --- Editors / IDEs ---
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+.netrwhist
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Environment
+# --- Environment / secrets ---
 .env
 .env.local
 .env.*.local
+*.pem
+*.key
 
-# Logs
+# --- Logs / debug ---
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Claude Code harness ---
+.claude/SKIP_TESTS
+.claude/local/
+.claude/settings.local.json
+
+# --- Project-local scratch / backups ---
+/tmp/
+.scratch/
+*.bak.[0-9]*
