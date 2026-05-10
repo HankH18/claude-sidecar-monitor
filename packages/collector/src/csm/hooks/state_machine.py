@@ -160,6 +160,14 @@ def apply_event(
         ),
     )
 
+    # Tree linkage (T10): resolve parent for fresh sessions. The lookup
+    # walks events for a recent ``Task`` PreToolUse in the same worktree;
+    # see csm.tree.resolve_parent.
+    if event_name == "SessionStart":
+        from csm.tree import resolve_parent
+
+        resolve_parent(conn, str(session_id))
+
     snapshot = _snapshot(conn, session_id)
     _emit(snapshot, event_name, received_at)
     return snapshot

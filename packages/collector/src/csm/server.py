@@ -47,14 +47,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.db = connect(key=key, db_path=paths.db)
 
-    # Background tasks: hang scanner + ntfy dispatcher. Both subscribe to
-    # the in-process bus; both are best-effort (failures logged, not raised).
+    # Background tasks: hang scanner, token aggregator, ntfy dispatcher.
+    # All subscribe to the in-process bus; failures logged, not raised.
     from csm.ntfy import NtfyDispatcher
     from csm.scanner import HangScanner
+    from csm.tokens import TokenAggregator
 
     scanner = HangScanner(app.state.db)
+    aggregator = TokenAggregator(app.state.db)
     dispatcher = NtfyDispatcher(app.state.db)
     await scanner.start()
+    await aggregator.start()
     await dispatcher.start()
 
     # JSONL watcher (T7): catch up + tail Claude Code transcripts.
@@ -68,6 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         watcher.stop()
         await dispatcher.stop()
+        await aggregator.stop()
         await scanner.stop()
         app.state.db.close()
 
