@@ -1,0 +1,184 @@
+"""Agent tree builder (T10).
+
+Resolves ``parent_session_id`` for sessions spawned via the ``Task``
+tool. The heuristic per docs/spec.md §4.4:
+
+1. Worktree grouping is the outermost layer.
+2. When parent P emits ``PreToolUse(tool_name="Task")``, queue an open
+   match window for P (30 s).
+3. A child session whose first hook event arrives within the parent's
+   window AND shares ``worktree_root`` is bound:
+   ``child.parent_session_id = P.session_id``.
+4. Children that don't match a Task call appear at the project level
+   (``parent_session_id = NULL``) — they're orphans and the UI
+   surfaces them at the project root.
+
+Public surface:
+
+- ``resolve_parent(conn, child_session_id)`` — try to find a parent for
+  a child session, persist if found. Idempotent.
+- ``build_project_tree(conn, worktree_root)`` — return the full tree
+  for a project as a recursive structure with sessions and children.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+__all__ = [
+    "MATCH_WINDOW_SECONDS",
+    "TreeNodeData",
+    "build_project_tree",
+    "resolve_parent",
+]
+
+MATCH_WINDOW_SECONDS = 30
+
+
+@dataclass
+class TreeNodeData:
+    session_id: str
+    state: str
+    agent_type: str | None
+    last_tool_name: str | None
+    last_event_at: str
+    started_at: str
+    primary_model: str | None
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    children: list[TreeNodeData] = field(default_factory=list)
+
+
+def _parse_iso(s: str) -> datetime:
+    """Parse an ISO 8601 UTC timestamp (with or without trailing Z)."""
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    return datetime.fromisoformat(s)
+
+
+def _format_iso(dt: datetime) -> str:
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def resolve_parent(conn: Any, child_session_id: str) -> str | None:
+    """Find and persist a parent for ``child_session_id``.
+
+    Returns the resolved parent's session_id, or ``None`` if no match.
+    Idempotent — calling repeatedly on a session that already has a
+    parent is a no-op (we don't re-resolve).
+    """
+    row = conn.execute(
+        """
+        SELECT worktree_root, started_at, parent_session_id
+        FROM sessions WHERE session_id = ?
+        """,
+        (child_session_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    worktree_root, started_at, existing_parent = row
+    if existing_parent:
+        return str(existing_parent)
+    if not worktree_root:
+        return None  # can't match without a worktree
+
+    started_dt = _parse_iso(started_at)
+    window_start = started_dt - timedelta(seconds=MATCH_WINDOW_SECONDS)
+
+    # Find the most recent Task PreToolUse from a *different* session in
+    # the same worktree, within the match window before this session
+    # started.
+    candidate = conn.execute(
+        """
+        SELECT e.session_id
+        FROM events e
+        JOIN sessions s ON s.session_id = e.session_id
+        WHERE e.event_name = 'PreToolUse'
+          AND e.tool_name  = 'Task'
+          AND s.worktree_root = ?
+          AND e.session_id != ?
+          AND e.received_at <= ?
+          AND e.received_at >= ?
+        ORDER BY e.received_at DESC
+        LIMIT 1
+        """,
+        (
+            worktree_root,
+            child_session_id,
+            _format_iso(started_dt),
+            _format_iso(window_start),
+        ),
+    ).fetchone()
+    if candidate is None:
+        return None
+
+    parent_id = str(candidate[0])
+    conn.execute(
+        "UPDATE sessions SET parent_session_id = ? WHERE session_id = ? "
+        "AND parent_session_id IS NULL",
+        (parent_id, child_session_id),
+    )
+    return parent_id
+
+
+def build_project_tree(conn: Any, worktree_root: str) -> list[TreeNodeData]:
+    """Return the project's session tree as nested ``TreeNodeData``.
+
+    Sessions in the worktree with ``parent_session_id IS NULL`` are
+    roots; their children attach recursively.
+    """
+    rows = conn.execute(
+        """
+        SELECT
+            session_id, parent_session_id, state, agent_type,
+            last_tool_name, last_event_at, started_at, primary_model,
+            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens
+        FROM sessions
+        WHERE worktree_root = ?
+        ORDER BY started_at ASC
+        """,
+        (worktree_root,),
+    ).fetchall()
+
+    node_by_id: dict[str, TreeNodeData] = {}
+    children_of: dict[str, list[TreeNodeData]] = {}
+
+    for r in rows:
+        node = TreeNodeData(
+            session_id=r[0],
+            state=r[2],
+            agent_type=r[3],
+            last_tool_name=r[4],
+            last_event_at=r[5],
+            started_at=r[6],
+            primary_model=r[7],
+            input_tokens=r[8],
+            output_tokens=r[9],
+            cache_read_tokens=r[10],
+            cache_write_tokens=r[11],
+        )
+        node_by_id[r[0]] = node
+        parent = r[1]
+        if parent:
+            children_of.setdefault(parent, []).append(node)
+
+    # Wire children into their parent nodes.
+    for parent_id, kids in children_of.items():
+        parent_node = node_by_id.get(parent_id)
+        if parent_node is None:
+            continue
+        parent_node.children = sorted(kids, key=lambda n: n.started_at)
+
+    roots = [
+        node
+        for sid, node in node_by_id.items()
+        if not next(
+            (r for r in rows if r[0] == sid and r[1]),
+            None,
+        )
+    ]
+    return sorted(roots, key=lambda n: n.started_at)
