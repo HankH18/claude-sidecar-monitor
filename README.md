@@ -37,6 +37,38 @@ csm install
 
 Total time: <5 minutes on a fresh Mac.
 
+## Reaching the dashboard from your phone
+
+The collector listens on `127.0.0.1:8765` — local only. To reach it from your iPhone, expose it over your tailnet via Tailscale Serve. No public endpoint, no port forwarding, end-to-end WireGuard.
+
+1. **Install Tailscale on both devices.** Get the macOS app from [tailscale.com/download](https://tailscale.com/download) and the iOS app from the App Store. Sign both into the same tailnet.
+
+2. **Bind the collector to your tailnet.** From the repo root:
+
+   ```bash
+   ./scripts/tailscale-serve.sh
+   ```
+
+   The script is idempotent — it detects an existing binding and exits cleanly. On success it prints your Mac's tailnet URL.
+
+3. **Open it on your iPhone.** In Safari, navigate to:
+
+   ```
+   https://<your-mac-name>.<your-tailnet>.ts.net/
+   ```
+
+   Tap the Share icon → **Add to Home Screen**. The dashboard installs as a standalone PWA with a custom icon.
+
+### LAN fallback
+
+If you trust your Wi-Fi (home network only — not coffee shops), you can skip Tailscale and reach the dashboard directly:
+
+```
+http://<mac-local-ip>:8765/
+```
+
+Find your Mac's LAN IP with `ipconfig getifaddr en0`. This bypasses HTTPS and tailnet ACLs, so only do it on a network you trust.
+
 ## Architecture
 
 ```
