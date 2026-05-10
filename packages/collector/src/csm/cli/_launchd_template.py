@@ -1,0 +1,96 @@
+"""Bundled launchd LaunchAgent plist template.
+
+We keep a copy of ``scripts/launchd/com.hank.claude-sidecar-monitor.plist.template``
+inside the wheel so ``csm install-launchd`` works after ``uv tool install``
+without needing the source repo on disk. The two copies must stay in sync —
+that's verified by :mod:`tests.cli.test_launchd_template_in_sync`.
+
+Substitution placeholders (``__DOUBLE_UNDERSCORE__``):
+  - ``__CSM_BIN__``   absolute path to the ``csm`` entrypoint
+  - ``__USER__``      macOS short username
+  - ``__HOME__``      absolute path to the user's home
+"""
+
+from __future__ import annotations
+
+PLIST_TEMPLATE = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  claude-sidecar-monitor LaunchAgent template.
+
+  This is a TEMPLATE. The `csm install-launchd` command substitutes the
+  __DOUBLE_UNDERSCORE__ placeholders below and writes the rendered plist to:
+
+      ~/Library/LaunchAgents/com.hank.claude-sidecar-monitor.plist
+
+  Placeholders:
+    __CSM_BIN__   absolute path to the `csm` entrypoint
+                  (typically ~/.local/bin/csm after `uv tool install`)
+    __USER__      macOS short username (e.g. `hankholcomb`)
+    __HOME__      absolute path to the user's home directory
+
+  Notes:
+    - User-level LaunchAgent (lives in ~/Library/LaunchAgents/), not root.
+    - KeepAlive only on crash (SuccessfulExit=false): clean `csm stop` exits
+      cleanly and stays stopped; SIGKILL / panic restarts.
+    - ThrottleInterval 30 s prevents tight crash loops from pegging CPU.
+    - DYLD_LIBRARY_PATH lets pysqlcipher3 find Homebrew's libsqlcipher.dylib
+      at runtime on Apple Silicon (default brew prefix /opt/homebrew).
+    - Logs land in ~/Library/Logs/claude-sidecar-monitor/; launchd creates
+      that directory on first write.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hank.claude-sidecar-monitor</string>
+
+    <key>UserName</key>
+    <string>__USER__</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__CSM_BIN__</string>
+        <string>start</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8765</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>WorkingDirectory</key>
+    <string>__HOME__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>DYLD_LIBRARY_PATH</key>
+        <string>/opt/homebrew/opt/sqlcipher/lib</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/claude-sidecar-monitor/collector.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/claude-sidecar-monitor/collector.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
+"""

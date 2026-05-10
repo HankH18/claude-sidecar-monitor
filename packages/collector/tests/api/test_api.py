@@ -245,34 +245,34 @@ async def test_stream_delivers_bus_events(app: FastAPI) -> None:
         httpx.AsyncClient(transport=transport, base_url="http://test") as client_,
         client_.stream("GET", "/stream") as response,
     ):
-            assert response.status_code == 200
+        assert response.status_code == 200
 
-            async def push_after_a_moment() -> None:
-                await asyncio.sleep(0.05)
-                await bus.publish(
-                    BusEvent(
-                        kind="session_update",
-                        session_id="alpha",
-                        data={"state": "tool", "session_id": "alpha"},
-                    )
+        async def push_after_a_moment() -> None:
+            await asyncio.sleep(0.05)
+            await bus.publish(
+                BusEvent(
+                    kind="session_update",
+                    session_id="alpha",
+                    data={"state": "tool", "session_id": "alpha"},
                 )
+            )
 
-            push_task = asyncio.create_task(push_after_a_moment())
-            try:
-                seen = False
-                async for raw_line in response.aiter_lines():
-                    if not raw_line.startswith("data:"):
-                        continue
-                    payload = raw_line[len("data:") :].strip()
-                    if not payload or payload == "{}":
-                        continue
-                    body = json.loads(payload)
-                    if body.get("kind") == "session_update":
-                        assert body["session_id"] == "alpha"
-                        seen = True
-                        break
-                assert seen, "expected to receive a session_update SSE event"
-            finally:
-                push_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await push_task
+        push_task = asyncio.create_task(push_after_a_moment())
+        try:
+            seen = False
+            async for raw_line in response.aiter_lines():
+                if not raw_line.startswith("data:"):
+                    continue
+                payload = raw_line[len("data:") :].strip()
+                if not payload or payload == "{}":
+                    continue
+                body = json.loads(payload)
+                if body.get("kind") == "session_update":
+                    assert body["session_id"] == "alpha"
+                    seen = True
+                    break
+            assert seen, "expected to receive a session_update SSE event"
+        finally:
+            push_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await push_task

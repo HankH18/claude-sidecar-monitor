@@ -23,9 +23,7 @@ async def _wait_for_totals(db, sid: str, expected_input: int, timeout: float = 1
     """Poll until the session row reflects the expected token total."""
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
-        row = db.execute(
-            "SELECT input_tokens FROM sessions WHERE session_id=?", (sid,)
-        ).fetchone()
+        row = db.execute("SELECT input_tokens FROM sessions WHERE session_id=?", (sid,)).fetchone()
         if row and row[0] == expected_input:
             return True
         await asyncio.sleep(0.05)
@@ -106,9 +104,7 @@ async def test_aggregator_debounces_within_window(db) -> None:
         )
         await bus.publish(BusEvent(kind="transcript_message", session_id=sid, data={}))
         await asyncio.sleep(0.2)  # let any recompute finish
-        row = db.execute(
-            "SELECT input_tokens FROM sessions WHERE session_id=?", (sid,)
-        ).fetchone()
+        row = db.execute("SELECT input_tokens FROM sessions WHERE session_id=?", (sid,)).fetchone()
         assert row[0] == 10  # debounced; not 15
     finally:
         await agg.stop()
