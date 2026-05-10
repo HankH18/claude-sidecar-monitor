@@ -4,12 +4,13 @@ This file tracks the project's current state for future development sessions.
 
 ---
 
-## Current state (2026-05-10, end of overnight build)
+## Current state (2026-05-10, end of overnight build + 2 self-improvement rounds)
 
 **Branch:** `main`
 **Working tree:** clean
-**Tests:** ✅ 175 backend pass + 47 frontend pass = **222 total, 1 skipped** (SSE-via-pytest hangs; manual verification works)
+**Tests:** ✅ 175 backend + 74 frontend = **249 total, 1 skipped** (SSE-via-pytest hangs; manual verification works)
 **Quality gates:** ruff + ruff format + mypy --strict + biome + tsc + vite build all clean
+**Bundle:** 376 KB JS / 38 KB CSS / PWA precache 405 KiB across 9 entries
 
 `make test`, `make lint`, `make typecheck`, `make build`, `make check` all green.
 
@@ -26,7 +27,9 @@ This file tracks the project's current state for future development sessions.
 | 6 — CLI + deployment | Typer CLI (T13), launchd plist (T14), Tailscale serve (T15) | ✅ | `e7a2ada`, `366640c` |
 | 7 — Dashboard | All 5 pages with mocks (T16–T20) + live wire-up | ✅ | `7156f05`, `f96b14a` |
 | 8 — Polish + docs | architecture.md (T25), verification-matrix.md (T28) | ✅ | `43d0d63` |
-| 9 — Final pass | This commit | ✅ | (this commit) |
+| 9 — Final pass | Verification matrix refresh + HANDOFF rewrite | ✅ | `368d1ef` |
+| Round 1 — Design polish | Theme tokens, EmptyState, Skeleton, animate-pulse-ring, focus rings, ≥44pt touch targets, semantic intent buttons | ✅ | `4813ce3` |
+| Round 2 — UX polish | Toast queue, ConfirmDialog, Breadcrumbs, ConnectionBanner, pull-to-refresh, transcript scrubber + j/k nav, relative time formatter, ntfy topic generator + preview | ✅ | `dee5a77` |
 
 `v0.1.0-rc1` candidate. Two known release-day items remain — see "What's left for the user" below.
 
@@ -105,12 +108,14 @@ Five background tasks share an in-process `csm.bus` (`asyncio.Queue` fan-out): r
 
 ## How sub-agents collaborated
 
-The overnight build used four general-purpose sub-agents in parallel for non-overlapping work:
+Six general-purpose sub-agents over the overnight + self-improvement run, all on non-overlapping file scopes:
 
-- `aee56d764b11853f5` — launchd plist + Tailscale script + README section
+- `aee56d764b11853f5` — launchd plist + Tailscale script + README "phone reach" section
 - `a4043b9d8282cbe85` — CLI commands (T13)
-- `af289e758e770549d` — frontend live-mode wire-up + ConnectionStatus + ErrorBoundary
-- `ac7328eb74c6ba5bd` — architecture.md + verification-matrix.md
+- `af289e758e770549d` — frontend live-mode wire-up (mock → real /api/* + SSE) + ConnectionStatus + ErrorBoundary
+- `ac7328eb74c6ba5bd` — architecture.md (4 Mermaid diagrams) + verification-matrix.md (38 rows)
+- `acc5eb71beeed7e68` — Round 1 design polish (theme tokens, EmptyState, Skeleton, animate-pulse-ring, focus rings, touch targets)
+- `ae9e2c031b57b0286` — Round 2 UX polish (toasts, ConfirmDialog, breadcrumbs, ConnectionBanner, pull-to-refresh, scrubber + j/k nav, relative time, ntfy preview)
 
 Each was scoped to a specific directory tree to avoid file conflicts. The coordinator (this session) committed every agent's work itself — sub-agents under sandbox can't pass the husky `commit-msg` hook reliably.
 
