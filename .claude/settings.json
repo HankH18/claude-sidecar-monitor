@@ -5,7 +5,7 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/danger-guard.sh" }
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/danger-guard.sh" }
         ]
       }
     ],
@@ -13,14 +13,14 @@
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/format.sh" }
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/format.sh" }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/test-on-stop.sh" }
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/test-on-stop.sh" }
         ]
       }
     ]
