@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
+import { ApiCallError, apiGet, withRetry } from "../api/client";
 import {
   type TimelineEntry,
   type TranscriptMessage,
@@ -8,11 +9,81 @@ import {
   mockTranscript,
 } from "../api/mock";
 import { useMock } from "../api/mode";
-import type { Session } from "../api/types";
+import type { Session, SessionDetail as SessionDetailT } from "../api/types";
 import DiffViewer from "../components/DiffViewer";
 import ElapsedClock from "../components/ElapsedClock";
 import StatePill from "../components/StatePill";
 import TokenBadge from "../components/TokenBadge";
+
+interface RawTranscriptMessage {
+  message_id: number;
+  session_id: string;
+  role: string;
+  timestamp: string;
+  content_json: string;
+  model?: string | null;
+}
+
+interface TranscriptPage {
+  messages: RawTranscriptMessage[];
+  next_cursor: number | null;
+}
+
+/** Server transcript rows store JSON-stringified content; flatten to a string. */
+function flattenContent(contentJson: string): {
+  content: string;
+  toolName?: string;
+  isDiff?: boolean;
+} {
+  try {
+    const parsed = JSON.parse(contentJson) as unknown;
+    if (typeof parsed === "string") return { content: parsed };
+    if (Array.isArray(parsed)) {
+      // Anthropic content blocks: [{type:"text",text:...}, {type:"tool_use",name,input}, ...]
+      const parts: string[] = [];
+      let toolName: string | undefined;
+      let isDiff = false;
+      for (const block of parsed as Array<Record<string, unknown>>) {
+        const type = block.type;
+        if (type === "text" && typeof block.text === "string") {
+          parts.push(block.text);
+        } else if (type === "tool_use") {
+          toolName = (block.name as string) || toolName;
+          if (toolName === "Edit" || toolName === "Write") isDiff = true;
+          parts.push(`${toolName ?? "tool"}: ${JSON.stringify(block.input ?? {})}`);
+        } else if (type === "tool_result") {
+          const c = block.content;
+          if (typeof c === "string") parts.push(c);
+          else parts.push(JSON.stringify(c));
+        } else if (typeof block.text === "string") {
+          parts.push(block.text);
+        }
+      }
+      return { content: parts.join("\n"), toolName, isDiff };
+    }
+    return { content: JSON.stringify(parsed) };
+  } catch {
+    return { content: contentJson };
+  }
+}
+
+function toUiMessage(raw: RawTranscriptMessage): TranscriptMessage {
+  const role = (
+    raw.role === "user" || raw.role === "assistant" || raw.role === "system"
+      ? raw.role
+      : "tool_result"
+  ) as TranscriptMessage["role"];
+  const flat = flattenContent(raw.content_json);
+  return {
+    message_id: raw.message_id,
+    role,
+    timestamp: raw.timestamp,
+    content: flat.content,
+    model: raw.model ?? undefined,
+    tool_name: flat.toolName,
+    is_diff: flat.isDiff,
+  };
+}
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -109,35 +180,109 @@ function MessageBlock({ m }: { m: TranscriptMessage }) {
   );
 }
 
+function SkeletonDetail() {
+  return (
+    <div className="space-y-3" aria-busy="true">
+      <div className="h-6 w-32 rounded bg-zinc-900/60 animate-pulse" />
+      <div className="h-12 rounded-md bg-zinc-900/60 animate-pulse" />
+      <div className="h-24 rounded-md bg-zinc-900/60 animate-pulse" />
+    </div>
+  );
+}
+
 export default function SessionDetail() {
   const { id } = useParams();
   const mock = useMock();
 
-  const session: Session | null = useMemo(() => {
-    if (!id) return null;
-    if (mock) {
-      return mockSessions.find((s) => s.session_id === id) ?? null;
-    }
-    // The real fetch would happen here via apiGet<SessionDetail>(`/api/sessions/${id}`).
-    // v0.1 deliberately keeps this page mock-only for the dashboard sub-agent.
-    return null;
+  // Mock-mode: synchronous lookups against fixtures.
+  const mockSession: Session | null = useMemo(() => {
+    if (!id || !mock) return null;
+    return mockSessions.find((s) => s.session_id === id) ?? null;
   }, [id, mock]);
 
-  const transcript = useMemo<TranscriptMessage[]>(() => {
-    if (!id) return [];
-    return mock ? mockTranscript(id) : [];
+  const mockTranscriptMsgs = useMemo<TranscriptMessage[]>(() => {
+    if (!id || !mock) return [];
+    return mockTranscript(id);
   }, [id, mock]);
 
-  const timeline = useMemo<TimelineEntry[]>(() => {
-    if (!id) return [];
-    return mock ? mockTimeline(id) : [];
+  const mockTimelineEntries = useMemo<TimelineEntry[]>(() => {
+    if (!id || !mock) return [];
+    return mockTimeline(id);
+  }, [id, mock]);
+
+  // Live-mode state.
+  const [liveSession, setLiveSession] = useState<Session | null>(null);
+  const [liveTranscript, setLiveTranscript] = useState<TranscriptMessage[]>([]);
+  const [liveLoading, setLiveLoading] = useState(true);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveNotFound, setLiveNotFound] = useState(false);
+
+  useEffect(() => {
+    if (mock || !id) return;
+    let cancelled = false;
+    setLiveLoading(true);
+    setLiveError(null);
+    setLiveNotFound(false);
+    setLiveSession(null);
+    setLiveTranscript([]);
+
+    (async () => {
+      try {
+        const [session, page] = await Promise.all([
+          withRetry(() => apiGet<SessionDetailT>(`/api/sessions/${id}`)),
+          withRetry(() => apiGet<TranscriptPage>(`/api/sessions/${id}/transcript`)).catch((err) => {
+            // If transcript 404s but session is fine, render empty list.
+            if (err instanceof ApiCallError && err.status === 404) {
+              return { messages: [], next_cursor: null } as TranscriptPage;
+            }
+            throw err;
+          }),
+        ]);
+        if (cancelled) return;
+        setLiveSession(session);
+        setLiveTranscript(page.messages.map(toUiMessage));
+        setLiveLoading(false);
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiCallError && err.status === 404) {
+          setLiveNotFound(true);
+        } else {
+          setLiveError((err as Error).message);
+        }
+        setLiveLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [id, mock]);
 
   if (!id) {
     return <p className="text-sm text-zinc-500">No session id.</p>;
   }
 
-  if (!session) {
+  if (!mock && liveLoading) {
+    return <SkeletonDetail />;
+  }
+
+  const session = mock ? mockSession : liveSession;
+  const transcript = mock ? mockTranscriptMsgs : liveTranscript;
+  const timeline = mock ? mockTimelineEntries : [];
+
+  const notFound = mock ? !session : liveNotFound;
+
+  if (notFound || !session) {
+    if (!mock && liveError) {
+      return (
+        <div className="space-y-2">
+          <Link to="/" className="text-xs text-emerald-400 hover:underline">
+            ← back
+          </Link>
+          <p className="text-sm text-red-400">Failed to load session: {liveError}</p>
+        </div>
+      );
+    }
     return (
       <div className="space-y-2">
         <Link to="/" className="text-xs text-emerald-400 hover:underline">

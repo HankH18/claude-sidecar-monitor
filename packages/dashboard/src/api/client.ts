@@ -47,3 +47,35 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   });
   return jsonOrThrow<T>(res);
 }
+
+export interface RetryOptions {
+  retries?: number;
+  baseDelayMs?: number;
+}
+
+/**
+ * Retry a transient API call with exponential backoff.
+ *
+ * Retries network failures and 5xx responses. 4xx errors (e.g. 404) are
+ * surfaced immediately so callers can short-circuit with the right UI.
+ * SSE has its own retry logic in stream.ts.
+ */
+export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
+  const { retries = 2, baseDelayMs = 300 } = options;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      // Don't retry client errors (4xx) — they won't get better.
+      if (err instanceof ApiCallError && err.status >= 400 && err.status < 500) {
+        throw err;
+      }
+      if (attempt === retries) break;
+      const delay = baseDelayMs * 2 ** attempt;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastErr;
+}

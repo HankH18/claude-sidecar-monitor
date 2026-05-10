@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiGet, apiPatch } from "../api/client";
+import { apiGet, apiPatch, withRetry } from "../api/client";
 import { getMockSettings, patchMockSettings } from "../api/mock";
 import { useMock } from "../api/mode";
 import type { Settings } from "../api/types";
@@ -17,6 +17,8 @@ export function useSettings(): {
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     if (mock) {
       setSettings(getMockSettings());
       setLoading(false);
@@ -24,7 +26,7 @@ export function useSettings(): {
         cancelled = true;
       };
     }
-    apiGet<Settings>("/api/settings")
+    withRetry(() => apiGet<Settings>("/api/settings"))
       .then((res) => {
         if (cancelled) return;
         setSettings(res);

@@ -1,9 +1,20 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import App from "./App";
+import { setUseMockOverride } from "./api/mode";
 
 describe("App", () => {
+  beforeEach(() => {
+    // The header now mounts a stream subscriber via ConnectionStatus, so we
+    // run App tests in mock mode to avoid touching the real EventSource API
+    // (which jsdom doesn't implement).
+    setUseMockOverride(true);
+  });
+  afterEach(() => {
+    setUseMockOverride(null);
+  });
+
   it("renders the Sidecar header", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>

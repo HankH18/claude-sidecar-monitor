@@ -1,4 +1,5 @@
 import { Link, NavLink, Route, Routes } from "react-router";
+import ConnectionStatus from "./components/ConnectionStatus";
 import Overview from "./pages/Overview";
 import ProjectDetail from "./pages/ProjectDetail";
 import SessionDetail from "./pages/SessionDetail";
@@ -28,9 +29,10 @@ export default function App() {
     <div className="min-h-dvh flex flex-col">
       <header className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur border-b border-zinc-800">
         <div className="px-4 py-3 flex items-center justify-between">
-          <Link to="/" className="font-semibold text-zinc-100">
+          <Link to="/" className="font-semibold text-zinc-100 inline-flex items-center gap-2">
             <span className="text-emerald-400">●</span> Sidecar
           </Link>
+          <ConnectionStatus />
         </div>
         <nav className="flex border-t border-zinc-900" aria-label="primary">
           <NavTab to="/" label="Live" />

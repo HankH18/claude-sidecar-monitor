@@ -31,6 +31,12 @@ export function openStream(
 
   const connect = () => {
     if (closed) return;
+    if (typeof EventSource === "undefined") {
+      // No SSE support in this environment (SSR or stripped test runtime).
+      // Surface as an error and bail; the consumer's status will go red.
+      onError?.(new Event("error"));
+      return;
+    }
     source = new EventSource(url);
     source.onopen = () => {
       onOpen?.();
