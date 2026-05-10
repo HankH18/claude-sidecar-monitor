@@ -13,10 +13,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from csm import __version__
+from csm.api import router as api_router
 from csm.config import Paths
 from csm.db import connect
 from csm.hooks import router as hooks_router
@@ -43,9 +46,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         key = None
 
     app.state.db = connect(key=key, db_path=paths.db)
+
+    # Background tasks: hang scanner + ntfy dispatcher. Both subscribe to
+    # the in-process bus; both are best-effort (failures logged, not raised).
+    from csm.ntfy import NtfyDispatcher
+    from csm.scanner import HangScanner
+
+    scanner = HangScanner(app.state.db)
+    dispatcher = NtfyDispatcher(app.state.db)
+    await scanner.start()
+    await dispatcher.start()
+
+    # JSONL watcher (T7): catch up + tail Claude Code transcripts.
+    from csm.jsonl import JsonlWatcher
+
+    watcher = JsonlWatcher(app.state.db, paths.projects)
+    watcher.start()
+
     try:
         yield
     finally:
+        watcher.stop()
+        await dispatcher.stop()
+        await scanner.stop()
         app.state.db.close()
 
 
@@ -64,6 +87,17 @@ def create_app() -> FastAPI:
         return {"ok": True, "version": __version__}
 
     app.include_router(hooks_router)
+    app.include_router(api_router)
+
+    # Static dashboard mount — only if the bundle has been built. In dev,
+    # `bun run dev` serves the dashboard separately on :5173.
+    static_dir = (
+        Path(__file__).resolve().parent / "_static"
+        if (Path(__file__).resolve().parent / "_static").exists()
+        else Path(__file__).resolve().parent.parent.parent.parent / "dashboard" / "dist"
+    )
+    if static_dir.exists():
+        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="dashboard")
 
     return app
 
