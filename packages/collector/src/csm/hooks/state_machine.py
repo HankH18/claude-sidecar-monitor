@@ -178,6 +178,33 @@ def apply_event(
 
             resolve_parent(conn, str(session_id))
 
+            # V2.A2 — assign the deterministic nickname (idempotent via
+            # COALESCE; same session_id → same nickname forever).
+            from csm.identity import generate_nickname
+
+            conn.execute(
+                "UPDATE sessions SET nickname = COALESCE(nickname, ?) "
+                "WHERE session_id = ?",
+                (generate_nickname(str(session_id)), str(session_id)),
+            )
+
+        # V2.A2 — derive a short title from the first user prompt. Only
+        # writes when title_source IS NULL so a subsequent
+        # UserPromptSubmit (mid-session continuation) doesn't clobber
+        # the original intent.
+        if event_name == "UserPromptSubmit":
+            from csm.identity import derive_title_from_user_prompt
+
+            prompt_text = payload.get("prompt")
+            if isinstance(prompt_text, str):
+                title = derive_title_from_user_prompt(prompt_text)
+                if title is not None:
+                    conn.execute(
+                        "UPDATE sessions SET title = ?, title_source = 'user_prompt' "
+                        "WHERE session_id = ? AND title_source IS NULL",
+                        (title, str(session_id)),
+                    )
+
         snapshot = _snapshot(conn, session_id)
         conn.execute("COMMIT")
     except Exception:

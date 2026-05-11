@@ -36,13 +36,19 @@ def test_seed_settings_present(tmp_db: Path) -> None:
         seeds = dict(conn.execute("SELECT key, value FROM settings").fetchall())
     finally:
         conn.close()
-    assert seeds == {
-        "hang_yellow_ms": "60000",
-        "hang_red_ms": "180000",
-        "ntfy_topic": "",
-    }
+    # v1 seeds from 001_init.sql
+    assert seeds["hang_yellow_ms"] == "60000"
+    assert seeds["hang_red_ms"] == "180000"
+    assert seeds["ntfy_topic"] == ""
     # plan_seat_type was explicitly removed from the seed (T4 amendment).
     assert "plan_seat_type" not in seeds
+    # v2 seeds from 002_v2.sql — present with empty/disabled defaults so
+    # the approval feature stays off until the user opts in.
+    assert seeds["api_secret"] == ""
+    assert seeds["approval_enabled"] == "0"
+    assert seeds["approval_tools"] == ""
+    assert seeds["approval_timeout_ms"] == "60000"
+    assert seeds["dashboard_url"] == ""
 
 
 def test_migration_idempotent(tmp_db: Path) -> None:

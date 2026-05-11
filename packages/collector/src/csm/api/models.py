@@ -32,6 +32,15 @@ class Session(BaseModel):
     output_tokens: int
     cache_read_tokens: int
     cache_write_tokens: int
+    # v2.A2 — session identity. Optional so v1 rows that haven't been
+    # touched by a v2 ingest still serialise cleanly.
+    title: str | None = None
+    title_source: str | None = None
+    agent_kind: str | None = None
+    agent_kind_confidence: float | None = None
+    nickname: str | None = None
+    activity_summary: str | None = None
+    activity_updated_at: str | None = None
 
 
 class ModelTokens(BaseModel):

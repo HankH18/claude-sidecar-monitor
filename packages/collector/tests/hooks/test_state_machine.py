@@ -239,6 +239,63 @@ def test_apply_event_rolls_back_on_exception(db: object, monkeypatch: pytest.Mon
     assert after == baseline
 
 
+# ────────── V2.A2 nickname + title ──────────
+
+
+def test_session_start_assigns_deterministic_nickname(db: object) -> None:
+    """V2.A2: SessionStart writes a deterministic nickname to the row."""
+    apply_event(db, "SessionStart", _payload())
+    nick = db.execute(  # type: ignore[attr-defined]
+        "SELECT nickname FROM sessions WHERE session_id=?", (SID,)
+    ).fetchone()[0]
+    assert nick is not None
+    # Format: <adj>-<noun>-<NNNN>
+    assert nick.count("-") == 2
+
+    # Re-applying SessionStart (resume) must not change the nickname.
+    apply_event(db, "SessionStart", _payload(source="resume"))
+    nick2 = db.execute(  # type: ignore[attr-defined]
+        "SELECT nickname FROM sessions WHERE session_id=?", (SID,)
+    ).fetchone()[0]
+    assert nick2 == nick
+
+
+def test_user_prompt_submit_derives_title(db: object) -> None:
+    """V2.A2: first UserPromptSubmit sets the session title."""
+    apply_event(db, "SessionStart", _payload())
+    apply_event(
+        db,
+        "UserPromptSubmit",
+        _payload(prompt="debug the failing test in foo_test.py"),
+    )
+    title, source = db.execute(  # type: ignore[attr-defined]
+        "SELECT title, title_source FROM sessions WHERE session_id=?", (SID,)
+    ).fetchone()
+    assert title == "debug the failing test in foo_test.py"
+    assert source == "user_prompt"
+
+
+def test_user_prompt_submit_doesnt_overwrite_existing_title(db: object) -> None:
+    """V2.A2: a second UserPromptSubmit (mid-session continuation) must
+    not clobber the original title."""
+    apply_event(db, "SessionStart", _payload())
+    apply_event(db, "UserPromptSubmit", _payload(prompt="initial intent"))
+    apply_event(db, "UserPromptSubmit", _payload(prompt="oh and also clean this up"))
+    title = db.execute(  # type: ignore[attr-defined]
+        "SELECT title FROM sessions WHERE session_id=?", (SID,)
+    ).fetchone()[0]
+    assert title == "initial intent"
+
+
+def test_user_prompt_submit_skips_empty_prompts(db: object) -> None:
+    apply_event(db, "SessionStart", _payload())
+    apply_event(db, "UserPromptSubmit", _payload(prompt="   "))
+    title = db.execute(  # type: ignore[attr-defined]
+        "SELECT title FROM sessions WHERE session_id=?", (SID,)
+    ).fetchone()[0]
+    assert title is None
+
+
 def test_known_events_set_matches_spec() -> None:
     """Sanity: spec.md §5 known events are in the validator set."""
     assert {

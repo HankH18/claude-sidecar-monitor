@@ -24,7 +24,11 @@ _SESSION_COLS = (
     "session_id, parent_session_id, worktree_root, project_label, cwd, "
     "transcript_path, agent_type, state, last_event_at, last_event_name, "
     "last_tool_name, started_at, completed_at, primary_model, input_tokens, "
-    "output_tokens, cache_read_tokens, cache_write_tokens"
+    "output_tokens, cache_read_tokens, cache_write_tokens, "
+    # v2.A2 identity columns — appended (don't reorder; _row_to_session
+    # uses positional indices)
+    "title, title_source, agent_kind, agent_kind_confidence, nickname, "
+    "activity_summary, activity_updated_at"
 )
 
 
@@ -48,6 +52,13 @@ def _row_to_session(row: tuple[Any, ...]) -> Session:
         output_tokens=row[15],
         cache_read_tokens=row[16],
         cache_write_tokens=row[17],
+        title=row[18],
+        title_source=row[19],
+        agent_kind=row[20],
+        agent_kind_confidence=row[21],
+        nickname=row[22],
+        activity_summary=row[23],
+        activity_updated_at=row[24],
     )
 
 
