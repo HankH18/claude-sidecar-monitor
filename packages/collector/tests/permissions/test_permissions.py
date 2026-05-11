@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from pathlib import Path
 
 import pytest
@@ -205,6 +206,107 @@ async def test_record_decision_returns_false_for_already_decided(db) -> None:
 
 
 # ────────── cleanup_stale_pending ──────────
+
+
+@pytest.mark.asyncio
+async def test_request_decision_honors_decision_during_register_race(db) -> None:
+    """Regression: the dashboard decides between the INSERT commit and
+    register() — record_decision must stash the result so register()
+    picks it up. Previously the decision was dropped on the floor and
+    the receiver returned {} despite a real user decision.
+
+    We reproduce by inserting the row + calling record_decision BEFORE
+    request_decision can register its waiter (simulating the worst-case
+    race), then calling request_decision in a way that finds the row
+    and registers.
+    """
+    # Insert the row manually (mimic the autocommit INSERT that
+    # request_decision does internally).
+    db.execute(
+        """
+        INSERT INTO permission_requests
+            (session_id, tool_name, tool_input_json, status, requested_at)
+        VALUES ('s1', 'Bash', '{}', 'pending', '2026-05-10T00:00:00Z')
+        """
+    )
+    request_id = db.execute(
+        "SELECT id FROM permission_requests ORDER BY id DESC LIMIT 1"
+    ).fetchone()[0]
+
+    # Dashboard decides BEFORE any waiter has registered.
+    accepted = await record_decision(
+        db, request_id=request_id, decision="allow", reason="pre-registered"
+    )
+    assert accepted is True
+
+    # Now a waiter registers. It must immediately see the deferred
+    # decision and the event must already be set.
+    from csm.permissions import decisions
+
+    event = await decisions.register(request_id)
+    assert event.is_set(), "deferred decision should pre-set the event"
+    decision, reason = await decisions.collect(request_id)
+    assert decision == "allow"
+    assert reason == "pre-registered"
+
+
+@pytest.mark.asyncio
+async def test_request_decision_cleanup_on_cancellation(db) -> None:
+    """Regression: a client disconnect (asyncio.CancelledError) used to
+    skip the timeout cleanup path — the holder leaked and the row stayed
+    'pending' forever (until the next startup's cleanup_stale_pending
+    sweep). With the try/finally + spawn-cleanup-task fix, both the
+    holder is dropped AND the row transitions to timed_out even if the
+    parent task is cancelled while parked on event.wait().
+    """
+    from csm.permissions import decisions
+
+    async def runner() -> None:
+        await request_decision(
+            db,
+            session_id="s1",
+            tool_use_id="cancel_me",
+            tool_name="Bash",
+            tool_input={"command": "true"},
+            timeout_ms=60_000,  # long — we'll cancel before it fires
+        )
+
+    task = asyncio.create_task(runner())
+    # Wait for the runner to reach the event.wait() — at which point the
+    # holder is registered AND the DB row is inserted. We detect this by
+    # polling the holder map (the "after register()" gate). Cancelling
+    # before this point would test a less-interesting scenario (the
+    # bug-fix surface is "in flight when client disconnects").
+    request_id: int | None = None
+    for _ in range(200):
+        await asyncio.sleep(0.001)
+        if decisions._holders:
+            request_id = next(iter(decisions._holders))
+            break
+    assert request_id is not None, "runner never registered a holder"
+
+    pre_tasks = set(asyncio.all_tasks())
+
+    # Cancel the task — simulates a FastAPI client disconnect.
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # The finally block spawned a cleanup task on the loop. In
+    # production the loop keeps running forever so the task gets cycles;
+    # in tests the loop runs only as long as the test body, so we have
+    # to await it explicitly.
+    post_tasks = set(asyncio.all_tasks()) - pre_tasks - {asyncio.current_task()}
+    for t in post_tasks:
+        with contextlib.suppress(BaseException):
+            await t
+
+    assert request_id not in decisions._holders, "holder leaked on cancel"
+    status = db.execute(
+        "SELECT status FROM permission_requests WHERE id = ?",
+        (request_id,),
+    ).fetchone()[0]
+    assert status == "timed_out", f"row stuck in {status!r} after cancel"
 
 
 def test_cleanup_stale_pending_marks_old_rows(db) -> None:

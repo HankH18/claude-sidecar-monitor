@@ -17,7 +17,7 @@ from csm.api.models import (
     TranscriptMessage,
     TreeNode,
 )
-from csm.digest import apply_digest_update
+from csm.digest import compute_session_digest
 from csm.tokens import get_daily_totals, get_subtree_tokens
 from csm.tree import build_project_tree
 
@@ -69,24 +69,20 @@ def list_sessions(conn: Any, *, limit: int = 200) -> list[Session]:
         (limit,),
     ).fetchall()
     sessions = [_row_to_session(r) for r in rows]
-    # V2.B — lazily refresh activity digests for any sessions whose
-    # column is stale or empty. apply_digest_update no-ops when the
-    # value is unchanged, so this stays cheap on a hot list endpoint.
+    # V2.B — overlay the freshly-computed digest on the response
+    # WITHOUT writing back to the DB. Persisted writes happen on the
+    # state-machine path (_maybe_emit_digest after every event). Doing
+    # UPDATEs here caused SQLITE_BUSY contention with the receiver's
+    # BEGIN IMMEDIATE write lock and N+1 churn on a hot endpoint.
     for s in sessions:
         try:
-            summary, generated_at, changed = apply_digest_update(conn, s.session_id)
+            summary, generated_at = compute_session_digest(conn, s.session_id)
         except Exception:
             # Digest is best-effort — never let it 500 the API.
             continue
-        if changed:
+        if summary is not None and s.activity_summary != summary:
             s.activity_summary = summary
             s.activity_updated_at = generated_at
-        elif summary is not None and s.activity_summary != summary:
-            # Shouldn't happen — apply_digest_update only returns
-            # changed=False when the values actually agree — but if a
-            # caller threw between SELECT and UPDATE we'd see this. Keep
-            # the response coherent.
-            s.activity_summary = summary
     return sessions
 
 
@@ -99,10 +95,10 @@ def get_session(conn: Any, session_id: str) -> Session | None:
         return None
     session = _row_to_session(row)
     try:
-        summary, generated_at, changed = apply_digest_update(conn, session_id)
+        summary, generated_at = compute_session_digest(conn, session_id)
     except Exception:
         return session
-    if changed:
+    if summary is not None and session.activity_summary != summary:
         session.activity_summary = summary
         session.activity_updated_at = generated_at
     return session

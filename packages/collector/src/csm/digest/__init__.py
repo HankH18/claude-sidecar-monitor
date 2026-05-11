@@ -49,10 +49,12 @@ __all__ = [
 ]
 
 # Window during which a PreToolUse without a matching PostToolUse counts
-# as "active". Most tools finish under a few seconds; a 30s ceiling
-# catches genuine in-flight work without over-claiming for tools that
-# legitimately stalled (those become hang/yellow in the state column).
-ACTIVE_TOOL_WINDOW_S = 30
+# as "active". The dashboard's #1 glance-question is "is anything hung",
+# so a tool that's been running 60-300s is exactly when we want to
+# surface "Running X" to make the stall visible. Beyond 5 minutes we
+# stop claiming — the hang scanner will have flipped state to 'hung'
+# by then and the state column conveys it.
+ACTIVE_TOOL_WINDOW_S = 5 * 60
 
 # How recent the last message has to be to surface in the digest.
 RECENT_TEXT_WINDOW_S = 5 * 60

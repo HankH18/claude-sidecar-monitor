@@ -68,19 +68,28 @@ def sign_deep_link(*, request_id: int, api_secret: str, ttl_s: int = DEEP_LINK_T
 
 
 def verify_deep_link(*, request_id: int, token: str, exp: int, api_secret: str) -> bool:
-    """Constant-time validate a deep-link token. Rejects expired tokens."""
-    if not api_secret:
-        return False
-    if int(time.time()) > exp:
-        return False
-    expected, _ = sign_deep_link(request_id=request_id, api_secret=api_secret, ttl_s=exp - int(time.time()))
-    # We can't reuse the helper's exp computation cleanly, so compute
-    # the HMAC directly here against the supplied exp.
+    """Constant-time validate a deep-link token. Rejects expired tokens.
+
+    Ordering matters for the timing side-channel: compute the HMAC and
+    constant-time compare UNCONDITIONALLY, then AND in the expiry +
+    secret checks. That way every failure mode takes the same wall-
+    clock time regardless of why it failed (expired vs. wrong signature
+    vs. uninstalled), so an attacker can't probe expiry boundaries.
+    """
+    # Always run the HMAC + compare, even if the secret is empty —
+    # using a dummy secret keeps the timing uniform.
+    secret = api_secret or "\x00" * 32
     msg = f"{request_id}:{exp}".encode()
-    digest = hmac.new(api_secret.encode("utf-8"), msg, hashlib.sha256).digest()
+    digest = hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).digest()
     expected_token = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    _ = expected  # silence
-    return hmac.compare_digest(token, expected_token)
+    signature_ok = hmac.compare_digest(token, expected_token)
+
+    # Only AFTER the (constant-time) HMAC check do we apply the cheap
+    # boolean gates. Using `&` rather than `and` so both expressions
+    # are evaluated regardless of order.
+    not_expired = int(time.time()) <= exp
+    has_secret = bool(api_secret)
+    return signature_ok & not_expired & has_secret
 
 
 def require_bearer(request: Request) -> str:

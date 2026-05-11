@@ -238,17 +238,35 @@ def test_completed_tool_is_not_active(db: Any) -> None:
 
 
 def test_old_active_tool_outside_window_ignored(db: Any) -> None:
-    """Pre 60s ago without Post — past the 30s window, don't surface."""
+    """Pre 10 minutes ago without Post — past the 5min window, don't
+    surface. The hang scanner will have flipped state='hung' by then."""
     _insert_event(
         db,
         event_name="PreToolUse",
         tool_name="Bash",
         tool_use_id="t6",
         payload={"tool_input": {"command": "ls"}},
-        received_at=NOW - timedelta(seconds=60),
+        received_at=NOW - timedelta(minutes=10),
     )
     summary, _ = derive_session_digest(db, "s1", now=NOW)
     assert summary is None
+
+
+def test_long_running_tool_inside_window_still_active(db: Any) -> None:
+    """A tool that started 90s ago and hasn't returned should still
+    surface as 'Running X' — the dashboard's #1 question is 'is
+    anything hung', so 60-300s stalls are exactly what we want visible."""
+    _insert_event(
+        db,
+        event_name="PreToolUse",
+        tool_name="Bash",
+        tool_use_id="t_long",
+        payload={"tool_input": {"command": "pytest -x"}},
+        received_at=NOW - timedelta(seconds=90),
+    )
+    summary, _ = derive_session_digest(db, "s1", now=NOW)
+    assert summary is not None
+    assert summary.startswith("Running Bash")
 
 
 # ────────── heuristic 3: recent assistant text ──────────
@@ -358,6 +376,38 @@ def test_apply_digest_update_writes_changed(db: Any) -> None:
     ).fetchone()
     assert row[0] == summary
     assert row[1] == generated_at
+
+
+def test_list_sessions_does_not_write_back_digest(db: Any) -> None:
+    """Regression: the API read path used to call ``apply_digest_update``
+    which UPDATEs sessions.activity_summary on every GET. Two concurrent
+    GETs could race the receiver's BEGIN IMMEDIATE write lock and hit
+    SQLITE_BUSY; also N+1 churn on a hot endpoint. The fix: read path
+    overlays the computed digest on the response WITHOUT writing back.
+
+    This test asserts ``list_sessions`` never bumps ``activity_updated_at``
+    on its own — only state-machine emits do.
+    """
+    from csm.api.queries import list_sessions
+
+    _insert_pending_approval(db, tool_name="Bash", requested_at=NOW - timedelta(seconds=2))
+
+    # Persisted column is empty initially.
+    pre = db.execute(
+        "SELECT activity_summary, activity_updated_at FROM sessions WHERE session_id='s1'"
+    ).fetchone()
+    assert pre == (None, None)
+
+    sessions = list_sessions(db, limit=10)
+    assert len(sessions) == 1
+    # The returned object should have the freshly-computed digest
+    # overlaid, but the DB row must NOT have been written.
+    assert sessions[0].activity_summary == "Awaiting approval for Bash"
+
+    post = db.execute(
+        "SELECT activity_summary, activity_updated_at FROM sessions WHERE session_id='s1'"
+    ).fetchone()
+    assert post == (None, None), "read path must not write back to sessions"
 
 
 def test_apply_digest_update_noop_when_unchanged(db: Any) -> None:

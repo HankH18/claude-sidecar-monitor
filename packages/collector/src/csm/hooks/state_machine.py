@@ -330,13 +330,23 @@ def _apply_agent_tool_event(
 
 
 def _emit_virtual(payload: dict[str, Any]) -> None:
-    """Schedule a ``subagent_update`` bus publish from this thread."""
+    """Schedule a ``subagent_update`` bus publish from this thread.
+
+    Uses ``bus.main_loop`` (captured at lifespan startup) because we're
+    invoked from ``asyncio.to_thread`` workers in production — those
+    threads have no running loop of their own, so
+    ``asyncio.get_running_loop()`` raises ``RuntimeError``. Falls back
+    to a best-effort ``get_running_loop`` when ``main_loop`` is unset
+    (e.g. unit tests that drive ``apply_event`` synchronously).
+    """
     import asyncio
 
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return
+    loop = bus.main_loop
+    if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
     event = BusEvent(
         kind="subagent_update",
         session_id=payload.get("parent_session_id"),
@@ -368,10 +378,12 @@ def _maybe_emit_digest(conn: Any, session_id: str) -> None:
 
     import asyncio
 
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return
+    loop = bus.main_loop
+    if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
     bus_event = BusEvent(
         kind="session_digest_update",
         session_id=session_id,
@@ -520,10 +532,12 @@ def _emit(snapshot: SessionSnapshot, event_name: str, received_at: str) -> None:
         session_id=snapshot.session_id,
         data=payload,
     )
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return  # no loop — caller is sync (test path); skip emission
+    loop = bus.main_loop
+    if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # no loop — caller is sync (test path); skip emission
     fut = asyncio.run_coroutine_threadsafe(bus.publish(bus_event), loop)
     # Surface bus-publish failures in the log instead of dropping silently.
     # The future is "free-running" but we attach a done callback that
