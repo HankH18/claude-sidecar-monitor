@@ -84,8 +84,36 @@ def install_command(
     if not dry_run:
         crypto.first_run_setup(passphrase, paths.salt)
         typer.echo(f"Derived key cached in Keychain (salt at {paths.salt}).")
+        # V2.D — generate (and persist) a 32-byte api_secret for the
+        # permission-decision endpoint's HMAC bearer. Idempotent: only
+        # writes when the existing value is empty so a re-install keeps
+        # any previously-issued dashboard tokens working.
+        import secrets
+
+        from csm.db import connect
+
+        key = crypto.get_key_from_keychain()
+        conn = connect(key=key, db_path=paths.db)
+        try:
+            current = conn.execute(
+                "SELECT value FROM settings WHERE key='api_secret'"
+            ).fetchone()
+            if current is None or not current[0]:
+                api_secret = secrets.token_urlsafe(32)
+                conn.execute(
+                    "INSERT INTO settings(key, value) VALUES ('api_secret', ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value, "
+                    "updated_at=datetime('now')",
+                    (api_secret,),
+                )
+                typer.echo("API secret: generated.")
+            else:
+                typer.echo("API secret: already present (kept existing).")
+        finally:
+            conn.close()
     else:
         typer.echo("[dry-run] would derive key + cache in Keychain.")
+        typer.echo("[dry-run] would generate api_secret in settings DB.")
 
     # Step 2 — hooks
     if not no_hooks:

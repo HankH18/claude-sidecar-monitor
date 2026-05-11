@@ -21,12 +21,12 @@ import re
 from dataclasses import dataclass
 
 __all__ = [
-    "TITLE_MAX_LEN",
     "AGENT_KINDS",
+    "TITLE_MAX_LEN",
     "AgentKindResult",
     "derive_title_from_user_prompt",
-    "infer_agent_kind",
     "generate_nickname",
+    "infer_agent_kind",
 ]
 
 TITLE_MAX_LEN = 80

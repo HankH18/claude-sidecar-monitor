@@ -51,6 +51,17 @@ class TreeNodeData:
     cache_read_tokens: int
     cache_write_tokens: int
     children: list[TreeNodeData] = field(default_factory=list)
+    # v2.C3 — virtual subagent flag + identifying metadata. is_virtual=True
+    # nodes do NOT correspond to a real `sessions` row; they're synthesised
+    # from `subagent_sessions` for in-session Agent tool calls. The
+    # dashboard treats them as leaf-only nodes (no transcript drill-in in
+    # v2; v2.1 will filter the parent's transcript by subagent_virtual_id).
+    is_virtual: bool = False
+    virtual_id: str | None = None
+    title: str | None = None
+    description: str | None = None
+    agent_kind: str | None = None
+    subagent_type: str | None = None
 
 
 def _parse_iso(s: str) -> datetime:
@@ -187,6 +198,52 @@ def build_project_tree(conn: Any, worktree_root: str) -> list[TreeNodeData]:
         if parent_node is None:
             continue
         parent_node.children = sorted(kids, key=lambda n: n.started_at)
+
+    # v2.C3 — append virtual subagent rows as children of their parent
+    # session. Virtuals are leaf-only in v2 MVP (no transcript drill-in).
+    # Token totals stay 0 (per-virtual attribution punted to v2.1).
+    virtual_rows = conn.execute(
+        """
+        SELECT
+            sa.virtual_id, sa.parent_session_id, sa.title, sa.description,
+            sa.agent_kind, sa.subagent_type, sa.state,
+            sa.started_at, sa.completed_at,
+            sa.input_tokens, sa.output_tokens,
+            sa.cache_read_tokens, sa.cache_write_tokens
+        FROM subagent_sessions sa
+        JOIN sessions s ON s.session_id = sa.parent_session_id
+        WHERE s.worktree_root = ?
+        ORDER BY sa.started_at ASC
+        """,
+        (worktree_root,),
+    ).fetchall()
+    for vr in virtual_rows:
+        parent_id = vr[1]
+        parent_node = node_by_id.get(parent_id)
+        if parent_node is None:
+            continue  # parent isn't in this worktree slice — skip
+        virtual_node = TreeNodeData(
+            session_id=vr[0],  # virtual_id reused as the tree's node_id
+            state=vr[6],
+            agent_type=vr[5],  # subagent_type doubles as agent_type
+            last_tool_name=None,
+            last_event_at=vr[8] or vr[7],
+            started_at=vr[7],
+            primary_model=None,
+            input_tokens=vr[9],
+            output_tokens=vr[10],
+            cache_read_tokens=vr[11],
+            cache_write_tokens=vr[12],
+            is_virtual=True,
+            virtual_id=vr[0],
+            title=vr[2],
+            description=vr[3],
+            agent_kind=vr[4],
+            subagent_type=vr[5],
+        )
+        parent_node.children = sorted(
+            [*parent_node.children, virtual_node], key=lambda n: n.started_at
+        )
 
     roots = [node for sid, node in node_by_id.items() if sid not in has_parent]
     return sorted(roots, key=lambda n: n.started_at)

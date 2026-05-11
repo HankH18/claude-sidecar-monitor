@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from csm.identity import (
     AGENT_KINDS,
     TITLE_MAX_LEN,
@@ -11,7 +9,6 @@ from csm.identity import (
     generate_nickname,
     infer_agent_kind,
 )
-
 
 # ────────── derive_title_from_user_prompt ──────────
 

@@ -296,6 +296,123 @@ def test_user_prompt_submit_skips_empty_prompts(db: object) -> None:
     assert title is None
 
 
+# ────────── V2.C2 virtual subagent rows ──────────
+
+
+def test_agent_tool_pre_creates_virtual_subagent(db: object) -> None:
+    """V2.C2: PreToolUse(Agent) inserts a subagent_sessions row with
+    title from description, agent_kind from subagent_type."""
+    apply_event(db, "SessionStart", _payload())
+    apply_event(
+        db,
+        "PreToolUse",
+        _payload(
+            tool_name="Agent",
+            tool_use_id="toolu_agent_1",
+            tool_input={
+                "description": "Review API safety",
+                "prompt": "You're an auditor. Walk the diff…",
+                "subagent_type": "code-reviewer",
+            },
+        ),
+    )
+    row = db.execute(  # type: ignore[attr-defined]
+        "SELECT virtual_id, parent_session_id, tool_use_id, title, agent_kind, "
+        "subagent_type, state FROM subagent_sessions"
+    ).fetchone()
+    assert row is not None
+    virtual_id, parent_sid, tool_use_id, title, kind, subtype, state = row
+    assert parent_sid == SID
+    assert tool_use_id == "toolu_agent_1"
+    assert virtual_id == f"{SID}:toolu_agent_1"
+    assert title == "Review API safety"
+    assert kind == "reviewer"
+    assert subtype == "code-reviewer"
+    assert state == "running"
+
+
+def test_agent_tool_post_closes_virtual_subagent(db: object) -> None:
+    """V2.C2: PostToolUse(Agent) marks the matching virtual as done."""
+    apply_event(db, "SessionStart", _payload())
+    apply_event(
+        db,
+        "PreToolUse",
+        _payload(
+            tool_name="Agent",
+            tool_use_id="toolu_x",
+            tool_input={"description": "task", "subagent_type": "Explore"},
+        ),
+    )
+    apply_event(
+        db,
+        "PostToolUse",
+        _payload(tool_name="Agent", tool_use_id="toolu_x"),
+    )
+    state, completed_at = db.execute(  # type: ignore[attr-defined]
+        "SELECT state, completed_at FROM subagent_sessions WHERE virtual_id=?",
+        (f"{SID}:toolu_x",),
+    ).fetchone()
+    assert state == "done"
+    assert completed_at is not None
+
+
+def test_agent_tool_pre_idempotent_on_duplicate(db: object) -> None:
+    """Duplicate PreToolUse(Agent) must not create a second virtual row."""
+    apply_event(db, "SessionStart", _payload())
+    apply_event(
+        db,
+        "PreToolUse",
+        _payload(
+            tool_name="Agent",
+            tool_use_id="toolu_dup",
+            tool_input={"description": "first", "subagent_type": "general-purpose"},
+        ),
+    )
+    apply_event(
+        db,
+        "PreToolUse",
+        _payload(
+            tool_name="Agent",
+            tool_use_id="toolu_dup",
+            tool_input={"description": "second"},
+        ),
+    )
+    rows = db.execute(  # type: ignore[attr-defined]
+        "SELECT title FROM subagent_sessions WHERE virtual_id=?",
+        (f"{SID}:toolu_dup",),
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0][0] == "first"
+
+
+def test_agent_tool_with_no_tool_use_id_skips_virtual(db: object) -> None:
+    """Without a tool_use_id we can't form a virtual_id; skip silently."""
+    apply_event(db, "SessionStart", _payload())
+    apply_event(
+        db,
+        "PreToolUse",
+        _payload(tool_name="Agent", tool_input={"description": "orphan"}),
+    )
+    count = db.execute(  # type: ignore[attr-defined]
+        "SELECT count(*) FROM subagent_sessions"
+    ).fetchone()[0]
+    assert count == 0
+
+
+def test_non_agent_tool_doesnt_create_virtual(db: object) -> None:
+    """PreToolUse for non-Agent tools must NOT create a subagent row."""
+    apply_event(db, "SessionStart", _payload())
+    apply_event(
+        db,
+        "PreToolUse",
+        _payload(tool_name="Bash", tool_use_id="toolu_bash"),
+    )
+    count = db.execute(  # type: ignore[attr-defined]
+        "SELECT count(*) FROM subagent_sessions"
+    ).fetchone()[0]
+    assert count == 0
+
+
 def test_known_events_set_matches_spec() -> None:
     """Sanity: spec.md §5 known events are in the validator set."""
     assert {

@@ -18,6 +18,10 @@ EventKind = Literal[
     "transcript_message",
     "hang",
     "settings_changed",
+    # v2 additions
+    "subagent_update",        # virtual subagent row created/updated (V2.C2)
+    "session_digest_update",  # activity_summary changed (V2.B1)
+    "permission_request",     # new pending decision (V2.D2/3)
 ]
 
 

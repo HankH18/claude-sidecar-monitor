@@ -205,6 +205,23 @@ def apply_event(
                         (title, str(session_id)),
                     )
 
+        # V2.C2 — synthesise / close virtual subagent rows for in-session
+        # Agent tool calls. Tool name is "Agent" (NOT "Task" as the v1
+        # spec assumed — confirmed empirically). On PreToolUse insert a
+        # pending virtual; on PostToolUse mark it done. Token attribution
+        # is deferred to v2.1 — Agent sub-runs are server-side at
+        # Anthropic so no separate JSONL exists to attribute against.
+        virtual_emit: dict[str, Any] | None = None
+        if event_name in ("PreToolUse", "PostToolUse") and tool_name == "Agent":
+            virtual_emit = _apply_agent_tool_event(
+                conn,
+                event_name=event_name,
+                parent_session_id=str(session_id),
+                tool_use_id=str(tool_use_id) if tool_use_id else "",
+                tool_input=payload.get("tool_input") or {},
+                received_at=received_at,
+            )
+
         snapshot = _snapshot(conn, session_id)
         conn.execute("COMMIT")
     except Exception:
@@ -215,7 +232,109 @@ def apply_event(
     # Emit AFTER commit so SSE subscribers see a state that's actually
     # persisted, never a doomed-rollback view.
     _emit(snapshot, event_name, received_at)
+    if virtual_emit is not None:
+        _emit_virtual(virtual_emit)
     return snapshot
+
+
+def _apply_agent_tool_event(
+    conn: Any,
+    *,
+    event_name: str,
+    parent_session_id: str,
+    tool_use_id: str,
+    tool_input: dict[str, Any],
+    received_at: str,
+) -> dict[str, Any] | None:
+    """V2.C2: maintain a row in ``subagent_sessions`` for each Agent tool
+    call. Returns a dict suitable for ``_emit_virtual``, or None when we
+    can't form a sane row (missing tool_use_id).
+
+    PreToolUse with tool_name="Agent":
+        INSERT OR IGNORE — first Pre fires, dupes are no-ops.
+
+    PostToolUse with tool_name="Agent":
+        UPDATE state='done', completed_at=<received_at>.
+    """
+    if not tool_use_id:
+        return None
+    from csm.identity import _truncate_at_word, infer_agent_kind
+
+    virtual_id = f"{parent_session_id}:{tool_use_id}"
+
+    if event_name == "PreToolUse":
+        description = (
+            tool_input.get("description") if isinstance(tool_input, dict) else None
+        )
+        prompt = tool_input.get("prompt") if isinstance(tool_input, dict) else None
+        subagent_type = (
+            tool_input.get("subagent_type") if isinstance(tool_input, dict) else None
+        )
+        kind_res = infer_agent_kind(tool_input if isinstance(tool_input, dict) else {})
+        kind = kind_res.kind if kind_res else None
+        title: str | None = None
+        if isinstance(description, str) and description.strip():
+            title = _truncate_at_word(description.strip(), 80)
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO subagent_sessions (
+                virtual_id, parent_session_id, tool_use_id,
+                title, description, prompt, agent_kind, subagent_type,
+                state, started_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)
+            """,
+            (
+                virtual_id,
+                parent_session_id,
+                tool_use_id,
+                title,
+                description if isinstance(description, str) else None,
+                prompt if isinstance(prompt, str) else None,
+                kind,
+                subagent_type if isinstance(subagent_type, str) else None,
+                received_at,
+            ),
+        )
+        return {
+            "virtual_id": virtual_id,
+            "parent_session_id": parent_session_id,
+            "title": title,
+            "description": description,
+            "agent_kind": kind,
+            "subagent_type": subagent_type,
+            "state": "running",
+            "started_at": received_at,
+            "completed_at": None,
+        }
+
+    # PostToolUse — close out
+    conn.execute(
+        "UPDATE subagent_sessions SET state = 'done', completed_at = ? "
+        "WHERE virtual_id = ? AND state = 'running'",
+        (received_at, virtual_id),
+    )
+    return {
+        "virtual_id": virtual_id,
+        "parent_session_id": parent_session_id,
+        "state": "done",
+        "completed_at": received_at,
+    }
+
+
+def _emit_virtual(payload: dict[str, Any]) -> None:
+    """Schedule a ``subagent_update`` bus publish from this thread."""
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    event = BusEvent(
+        kind="subagent_update",
+        session_id=payload.get("parent_session_id"),
+        data=payload,
+    )
+    asyncio.run_coroutine_threadsafe(bus.publish(event), loop)
 
 
 # ────────────────────────── helpers ──────────────────────────

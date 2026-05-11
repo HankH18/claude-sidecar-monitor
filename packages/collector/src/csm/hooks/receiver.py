@@ -55,4 +55,27 @@ async def receive_hook(
             detail={"error": {"code": "invalid_payload", "message": str(exc)}},
         ) from exc
 
+    # V2.D — phone permission approval. PreToolUse events on user-
+    # configured tools pause here and await a dashboard decision;
+    # everything else returns {} (no-op response, Claude proceeds).
+    if event_name == "PreToolUse":
+        from csm.permissions import is_tool_approval_required, request_decision
+
+        config = await asyncio.to_thread(
+            is_tool_approval_required, db, payload.get("tool_name")
+        )
+        if config is not None:
+            session_id = str(payload.get("session_id") or "")
+            tool_use_id_raw = payload.get("tool_use_id")
+            tool_use_id = str(tool_use_id_raw) if tool_use_id_raw is not None else None
+            result = await request_decision(
+                db,
+                session_id=session_id,
+                tool_use_id=tool_use_id,
+                tool_name=str(payload.get("tool_name")),
+                tool_input=payload.get("tool_input"),
+                timeout_ms=config.timeout_ms,
+            )
+            return result.to_hook_response()
+
     return {}

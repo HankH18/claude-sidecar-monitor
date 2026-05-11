@@ -62,6 +62,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await aggregator.start()
     await dispatcher.start()
 
+    # V2.D — mark any pending permission requests older than 1h as
+    # timed_out at startup. After a process restart the in-memory
+    # PendingDecisions registry is empty, so awaiters from the prior
+    # process are gone; the rows stay around for audit + dashboard
+    # history but shouldn't show up as "pending" any longer.
+    from csm.permissions import cleanup_stale_pending
+
+    cleanup_stale_pending(app.state.db)
+
     # JSONL watcher (T7): catch up + tail Claude Code transcripts.
     from csm.jsonl import JsonlWatcher
 

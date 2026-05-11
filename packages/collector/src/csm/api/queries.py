@@ -141,6 +141,48 @@ def project_tree(conn: Any, worktree_root: str) -> list[TreeNode]:
 
 def _to_tree_node(conn: Any, node: Any) -> TreeNode:
     children = [_to_tree_node(conn, c) for c in node.children]
+
+    # v2.C3 — virtual subagent leaf. Build a minimal Session from the
+    # TreeNodeData (we don't have a real sessions row to look up) and
+    # tag the wrapper so the dashboard can render it distinctively.
+    if getattr(node, "is_virtual", False):
+        virtual_session = Session(
+            session_id=node.session_id,  # equals virtual_id
+            parent_session_id=None,
+            worktree_root="",
+            project_label=None,
+            cwd="",
+            transcript_path=None,
+            agent_type=node.agent_type,
+            state=node.state,
+            last_event_at=node.last_event_at,
+            last_event_name=None,
+            last_tool_name=None,
+            started_at=node.started_at,
+            completed_at=None,
+            primary_model=None,
+            input_tokens=node.input_tokens,
+            output_tokens=node.output_tokens,
+            cache_read_tokens=node.cache_read_tokens,
+            cache_write_tokens=node.cache_write_tokens,
+            title=node.title,
+            agent_kind=node.agent_kind,
+        )
+        return TreeNode(
+            session=virtual_session,
+            children=children,  # always [] for virtuals in v2 MVP
+            subtree_tokens=SubtreeTokens(
+                input=node.input_tokens,
+                output=node.output_tokens,
+                cache_read=node.cache_read_tokens,
+                cache_write=node.cache_write_tokens,
+                descendant_count=0,
+            ),
+            is_virtual=True,
+            virtual_id=node.virtual_id,
+            description=node.description,
+        )
+
     subtree = get_subtree_tokens(conn, node.session_id)
     # The TreeNodeData carries only the columns build_project_tree selected;
     # fetch the full row so consumers get worktree_root / cwd / project_label /

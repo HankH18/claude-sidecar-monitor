@@ -124,6 +124,73 @@ async def send_test_notification(topic: str) -> bool:
         )
 
 
+async def push_permission_request(
+    conn: Any,
+    *,
+    request_id: int,
+    session_id: str,
+    tool_name: str,
+) -> bool:
+    """V2.D — push a permission-approval prompt to the user's phone.
+
+    The notification's Click header is the deep-link into the
+    dashboard's ``/permissions/:id`` route, signed with the install's
+    ``api_secret`` and a 30-minute expiry. ntfy is best-effort — if the
+    topic is empty (user hasn't configured ntfy) we return False; the
+    dashboard banner still surfaces the request via SSE.
+    """
+    topic = await asyncio.to_thread(_topic_for, conn)
+    if not topic:
+        return False
+    dashboard_url = await asyncio.to_thread(_dashboard_url_for, conn)
+    api_secret = await asyncio.to_thread(_api_secret_for, conn)
+
+    # Build a signed deep-link if we have the api_secret. Without it
+    # we send a plain ntfy push without a Click URL — the user still
+    # sees the message and can open the dashboard manually.
+    headers: dict[str, str] = {
+        "Title": f"Approve {tool_name}?",
+        "Priority": "5",
+        "Tags": "warning,bell",
+    }
+    if dashboard_url and api_secret:
+        from csm.api.auth import sign_deep_link
+
+        token, exp = sign_deep_link(request_id=request_id, api_secret=api_secret)
+        # Strip trailing slash to avoid double-slash in the path.
+        base = dashboard_url.rstrip("/")
+        headers["Click"] = f"{base}/permissions/{request_id}?t={token}&exp={exp}"
+
+    body = (
+        f"Session {session_id[:8]}… is requesting permission to use "
+        f"{tool_name}. Tap to review."
+    )
+
+    async with httpx.AsyncClient() as client:
+        return await _post(
+            client,
+            {
+                "url": f"{NTFY_BASE}/{topic}",
+                "content": body,
+                "headers": headers,
+            },
+        )
+
+
+def _dashboard_url_for(conn: Any) -> str:
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key='dashboard_url'"
+    ).fetchone()
+    return row[0] if row else ""
+
+
+def _api_secret_for(conn: Any) -> str:
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key='api_secret'"
+    ).fetchone()
+    return row[0] if row else ""
+
+
 class NtfyDispatcher:
     """Subscribes to ``csm.bus`` and dispatches matching events to ntfy.
 

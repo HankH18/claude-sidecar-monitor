@@ -159,3 +159,89 @@ def test_build_project_tree_orphan_at_root(db) -> None:
 
 def test_build_project_tree_empty_for_unknown_worktree(db) -> None:
     assert build_project_tree(db, "/no/such/worktree") == []
+
+
+# ────────── V2.C3 virtual subagent children ──────────
+
+
+def test_build_project_tree_includes_virtual_subagents(db) -> None:
+    """V2.C3: subagent_sessions rows attach as children of their
+    parent_session_id in the tree, sorted by started_at."""
+    base = datetime(2026, 5, 10, 0, 0, 0, tzinfo=UTC)
+    _create_session(db, "parent", started=base)
+
+    db.execute(
+        """
+        INSERT INTO subagent_sessions (
+            virtual_id, parent_session_id, tool_use_id, title, description,
+            agent_kind, subagent_type, state, started_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "parent:t1",
+            "parent",
+            "t1",
+            "review the API",
+            "Review the API safety",
+            "reviewer",
+            "code-reviewer",
+            "done",
+            (base + timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            (base + timedelta(seconds=15)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        ),
+    )
+    db.execute(
+        """
+        INSERT INTO subagent_sessions (
+            virtual_id, parent_session_id, tool_use_id, title, description,
+            state, started_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "parent:t2",
+            "parent",
+            "t2",
+            "explore the docs",
+            "Explore docs/",
+            "running",
+            (base + timedelta(seconds=10)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        ),
+    )
+
+    roots = build_project_tree(db, WORKTREE)
+    assert len(roots) == 1
+    parent = roots[0]
+    assert parent.session_id == "parent"
+    assert len(parent.children) == 2
+    # Sorted by started_at: t1 (+5s) before t2 (+10s)
+    assert parent.children[0].virtual_id == "parent:t1"
+    assert parent.children[0].is_virtual is True
+    assert parent.children[0].title == "review the API"
+    assert parent.children[0].agent_kind == "reviewer"
+    assert parent.children[0].state == "done"
+    assert parent.children[1].virtual_id == "parent:t2"
+    assert parent.children[1].state == "running"
+
+
+def test_virtual_subagents_only_attach_within_same_worktree(db) -> None:
+    """Virtuals whose parent lives in a DIFFERENT worktree must NOT appear."""
+    base = datetime(2026, 5, 10, 0, 0, 0, tzinfo=UTC)
+    _create_session(db, "here_parent", started=base, worktree="/wanted")
+    _create_session(db, "there_parent", started=base, worktree="/other")
+    db.execute(
+        """
+        INSERT INTO subagent_sessions
+            (virtual_id, parent_session_id, tool_use_id, state, started_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            "there_parent:x",
+            "there_parent",
+            "x",
+            "done",
+            base.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        ),
+    )
+    roots = build_project_tree(db, "/wanted")
+    assert len(roots) == 1
+    assert roots[0].children == []

@@ -22,6 +22,7 @@ from csm.api.models import (
     TranscriptPage,
     TreeNode,
 )
+from csm.api.permissions import router as _permissions_router
 from csm.api.queries import (
     daily_totals,
     get_session,
@@ -38,6 +39,9 @@ from csm.bus import bus
 from csm.tokens import get_session_tokens_by_model
 
 router = APIRouter()
+# V2.D — phone permission approval endpoints. Mounted on the same prefix
+# (/api/permission-requests). Auth via require_bearer on each route.
+router.include_router(_permissions_router)
 
 
 def _db(request: Request) -> Any:

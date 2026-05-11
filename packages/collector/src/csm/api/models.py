@@ -85,6 +85,13 @@ class TreeNode(BaseModel):
     session: Session
     children: list[TreeNode] = Field(default_factory=list)
     subtree_tokens: SubtreeTokens
+    # v2.C3 — virtual subagent flag. When True the ``session`` field is
+    # a synthesised stand-in: ``session_id`` is the ``virtual_id``
+    # (``<parent_sid>:<tool_use_id>``), most identifying fields are
+    # empty. ``description`` carries the Agent tool's intent string.
+    is_virtual: bool = False
+    virtual_id: str | None = None
+    description: str | None = None
 
 
 class StateSnapshot(BaseModel):
