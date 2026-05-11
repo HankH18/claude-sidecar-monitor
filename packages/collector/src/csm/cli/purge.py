@@ -94,8 +94,28 @@ def purge_command(
 
     Exactly one of ``--older-than`` or ``--reset-passphrase`` must be set.
     """
-    if bool(older_than) == bool(reset_passphrase):
-        typer.echo("Error: pass exactly one of --older-than or --reset-passphrase.", err=True)
+    if older_than and reset_passphrase:
+        typer.echo(
+            "Error: --older-than and --reset-passphrase are mutually exclusive.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if not older_than and not reset_passphrase:
+        typer.echo("csm purge needs one of:", err=True)
+        typer.echo(
+            "  --older-than <duration>   delete events/transcripts older than the duration",
+            err=True,
+        )
+        typer.echo(
+            "                            (units: s, m, h, d, w — e.g. 30d, 24h, 2w)",
+            err=True,
+        )
+        typer.echo(
+            "  --reset-passphrase        wipe DB + salt + Keychain entry; forces fresh install",
+            err=True,
+        )
+        typer.echo("", err=True)
+        typer.echo("Run `csm purge --help` for full options.", err=True)
         raise typer.Exit(code=2)
 
     if reset_passphrase:

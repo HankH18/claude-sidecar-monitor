@@ -2,16 +2,21 @@
 
 ``install`` walks the user through:
 
-1. Passphrase prompt (with confirmation).
-2. ``crypto.first_run_setup`` — derive Argon2id key, persist salt at
-   ``~/Library/Application Support/claude-sidecar-monitor/store.salt``,
-   cache the raw key in macOS Keychain.
-3. ``install_hooks`` — merge entries into ``~/.claude/settings.json``
+1. Passphrase setup — three paths depending on existing state:
+   a. First-run (no Keychain entry): prompt + ``crypto.first_run_setup``.
+   b. Re-install (Keychain entry opens DB): skip the passphrase prompt,
+      reuse the cached key.
+   c. Recovery (Keychain entry present but does NOT open DB): warn,
+      offer to re-enter the original passphrase, derive + verify before
+      touching the Keychain. NEVER blindly overwrite a Keychain entry
+      we know is mismatched against the DB — that path stranded users
+      on encrypted data they couldn't decrypt.
+2. ``install_hooks`` — merge entries into ``~/.claude/settings.json``
    (idempotent, with timestamped backup).
-4. ``install_launchd`` — render the LaunchAgent plist into
+3. ``install_launchd`` — render the LaunchAgent plist into
    ``~/Library/LaunchAgents/`` and best-effort ``launchctl bootstrap``.
-5. ntfy topic prompt (optional). Stored in ``settings`` table.
-6. Print the dashboard URL hint (Tailscale Serve setup is per-user and
+4. ntfy topic prompt (optional). Stored in ``settings`` table.
+5. Print the dashboard URL hint (Tailscale Serve setup is per-user and
    handled separately per spec §10).
 
 Each step has an opt-out flag so the user can re-run a single step
@@ -21,6 +26,7 @@ without re-prompting for passphrase / overwriting unrelated state.
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 import typer
 
@@ -30,6 +36,11 @@ from csm.cli.launchd import plist_install_path, uninstall_launchd
 from csm.config import Paths
 from csm.crypto import MIN_PASSPHRASE_LEN
 from csm.db import connect
+
+# Max attempts at recovery before bailing out and pointing the user at
+# `csm purge --reset-passphrase`. Three matches the macOS Keychain prompt
+# UX they're already conditioned to.
+_RECOVERY_MAX_ATTEMPTS = 3
 
 
 def _set_ntfy_topic(topic: str, *, key: bytes) -> None:
@@ -44,6 +55,124 @@ def _set_ntfy_topic(topic: str, *, key: bytes) -> None:
         )
     finally:
         conn.close()
+
+
+def _can_open_db(key: bytes, db_path: Path) -> bool:
+    """Return True if ``key`` decrypts the DB at ``db_path``.
+
+    Any failure — missing file, wrong key, corrupted header — is treated
+    uniformly as "can't open." The caller routes the user accordingly.
+    """
+    if not db_path.exists():
+        return False
+    try:
+        conn = connect(key=key, db_path=db_path)
+    except Exception:
+        return False
+    try:
+        # SQLCipher returns garbage rows on a wrong key until a real read
+        # forces decrypt — connect() already does that, so we just close.
+        conn.close()
+    except Exception:
+        return False
+    return True
+
+
+def _prompt_new_passphrase() -> str:
+    """Prompt for a fresh passphrase with confirmation + length check."""
+    passphrase = typer.prompt(
+        "Choose a passphrase to encrypt the local store",
+        hide_input=True,
+        confirmation_prompt=True,
+    )
+    if len(passphrase) < MIN_PASSPHRASE_LEN:
+        typer.echo(
+            f"Error: passphrase must be at least {MIN_PASSPHRASE_LEN} characters "
+            "(empty/short passphrases give false confidence — the store would "
+            "be trivially brute-forceable).",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    return str(passphrase)
+
+
+def _recover_existing_db(paths: Paths) -> bytes:
+    """Recovery path: existing DB present but cached Keychain key doesn't open it.
+
+    Up to _RECOVERY_MAX_ATTEMPTS prompts. On a correct passphrase, the
+    derived key is verified against the DB BEFORE touching the Keychain
+    — so a wrong guess never strands the user further.
+    """
+    typer.echo("")
+    typer.echo("WARNING: a cached Keychain key is present but does NOT decrypt the existing DB.")
+    typer.echo(f"  DB path:   {paths.db}")
+    typer.echo(f"  Salt path: {paths.salt}")
+    typer.echo("This usually means a previous `csm install` was run with a different passphrase.")
+    typer.echo("")
+    typer.echo("Options:")
+    typer.echo("  1. Re-enter your ORIGINAL passphrase to recover (the data is recoverable).")
+    typer.echo("  2. Abort and run `csm purge --reset-passphrase` to wipe and start fresh.")
+    typer.echo("")
+    if not typer.confirm("Re-enter original passphrase now?", default=True):
+        typer.echo("Aborted. Run `csm purge --reset-passphrase` to wipe the store.")
+        raise typer.Exit(code=1)
+
+    salt = crypto.load_or_create_salt(paths.salt)
+    for attempt in range(_RECOVERY_MAX_ATTEMPTS):
+        passphrase = typer.prompt(
+            "Enter original passphrase",
+            hide_input=True,
+        )
+        if len(passphrase) < MIN_PASSPHRASE_LEN:
+            remaining = _RECOVERY_MAX_ATTEMPTS - attempt - 1
+            typer.echo(f"  Too short. {remaining} attempts remaining.", err=True)
+            continue
+        derived = crypto.derive_key(passphrase, salt)
+        if _can_open_db(derived, paths.db):
+            crypto.store_key_in_keychain(derived)
+            typer.echo("Recovered: derived key from original passphrase, cached in Keychain.")
+            return derived
+        remaining = _RECOVERY_MAX_ATTEMPTS - attempt - 1
+        if remaining > 0:
+            typer.echo(f"  Wrong passphrase. {remaining} attempts remaining.", err=True)
+
+    typer.echo(
+        "Recovery failed. Run `csm purge --reset-passphrase` to wipe the store and start over.",
+        err=True,
+    )
+    raise typer.Exit(code=1)
+
+
+def _setup_or_reuse_key(paths: Paths) -> bytes:
+    """Resolve the encryption key for this install.
+
+    Routes to one of three paths based on the current state of the
+    Keychain entry and the on-disk DB. Always returns a key that
+    actually opens the DB (or raises Exit). Never overwrites a working
+    Keychain entry.
+    """
+    existing = crypto.get_key_from_keychain()
+    db_exists = paths.db.exists()
+
+    if existing is not None and db_exists:
+        if _can_open_db(existing, paths.db):
+            typer.echo("Encryption key: already cached and opens existing DB — reusing.")
+            return existing
+        return _recover_existing_db(paths)
+
+    if existing is not None and not db_exists:
+        # Stale Keychain entry from a previous install whose DB was
+        # deleted out-of-band. Clear it and treat as first-run so the
+        # user gets a fresh passphrase prompt without surprise.
+        typer.echo("Keychain entry present but DB is missing — clearing stale entry.")
+        crypto.delete_key_from_keychain()
+
+    passphrase = _prompt_new_passphrase()
+    crypto.first_run_setup(passphrase, paths.salt)
+    typer.echo(f"Derived key cached in Keychain (salt at {paths.salt}).")
+    key = crypto.get_key_from_keychain()
+    assert key is not None  # just stored — narrow for type-checker
+    return key
 
 
 def install_command(
@@ -67,32 +196,16 @@ def install_command(
     typer.echo("csm install — first-run bootstrap")
     typer.echo("================================")
 
-    # Step 1 — passphrase + key cache
-    passphrase = typer.prompt(
-        "Choose a passphrase to encrypt the local store",
-        hide_input=True,
-        confirmation_prompt=True,
-    )
-    if len(passphrase) < MIN_PASSPHRASE_LEN:
-        typer.echo(
-            f"Error: passphrase must be at least {MIN_PASSPHRASE_LEN} characters "
-            "(empty/short passphrases give false confidence — the store would "
-            "be trivially brute-forceable).",
-            err=True,
-        )
-        raise typer.Exit(code=2)
+    # Step 1 — passphrase + key cache. Routes between first-run, reuse,
+    # and recovery based on what's already in the Keychain + on disk.
     if not dry_run:
-        crypto.first_run_setup(passphrase, paths.salt)
-        typer.echo(f"Derived key cached in Keychain (salt at {paths.salt}).")
+        key = _setup_or_reuse_key(paths)
         # V2.D — generate (and persist) a 32-byte api_secret for the
         # permission-decision endpoint's HMAC bearer. Idempotent: only
         # writes when the existing value is empty so a re-install keeps
         # any previously-issued dashboard tokens working.
         import secrets
 
-        from csm.db import connect
-
-        key = crypto.get_key_from_keychain()
         conn = connect(key=key, db_path=paths.db)
         try:
             current = conn.execute(
@@ -155,17 +268,13 @@ def install_command(
         show_default=False,
     )
     if not dry_run:
-        # We need the just-derived key to open the DB. Pull from Keychain
-        # rather than holding the raw bytes around in this scope.
-        key = crypto.get_key_from_keychain()
-        if key is None:
-            typer.echo("WARNING: key not found in Keychain — skipping ntfy_topic write.")
+        # ``key`` was bound by _setup_or_reuse_key above and known to open
+        # the DB. Reuse it directly — no extra Keychain round-trip.
+        _set_ntfy_topic(topic, key=key)
+        if topic:
+            typer.echo(f"ntfy topic set: {topic}")
         else:
-            _set_ntfy_topic(topic, key=key)
-            if topic:
-                typer.echo(f"ntfy topic set: {topic}")
-            else:
-                typer.echo("ntfy topic disabled (empty).")
+            typer.echo("ntfy topic disabled (empty).")
     else:
         typer.echo(f"[dry-run] would set ntfy_topic={topic!r} in settings DB.")
 
