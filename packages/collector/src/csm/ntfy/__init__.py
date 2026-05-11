@@ -161,7 +161,21 @@ class NtfyDispatcher:
         try:
             while True:
                 event = await queue.get()
-                await self._dispatch(event)
+                # Fire-and-forget so a slow ntfy.sh (5-second per-POST
+                # timeout) doesn't block the bus drain. If we awaited
+                # _dispatch directly, a single slow upstream could fill
+                # our queue (256-deep) and trigger bus drop-on-full for
+                # OTHER subscribers, not just for our notifications. The
+                # task is created with a stable name so a log filter
+                # `csm-ntfy-fire-*` can isolate stuck pushes.
+                fire = asyncio.create_task(
+                    self._dispatch(event),
+                    name=f"csm-ntfy-fire-{event.kind}-{event.session_id or '_'}",
+                )
+                # Don't await fire — drop the reference and let the loop
+                # take it. We attach a done callback that surfaces
+                # exceptions in the log so silent failures don't pile up.
+                fire.add_done_callback(_log_fire_exceptions)
         finally:
             await bus.unsubscribe(queue)
 
@@ -176,6 +190,17 @@ class NtfyDispatcher:
             return
         assert self._client is not None
         await _post(self._client, payload)
+
+
+def _log_fire_exceptions(task: asyncio.Task[None]) -> None:
+    """Done-callback for fire-and-forget dispatch tasks. Swallows
+    CancelledError; logs any other exception. We never raise here —
+    that would propagate into the event loop and crash it."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        log.warning("ntfy: dispatch task '%s' raised: %r", task.get_name(), exc)
 
 
 # Make Paths importable here so callers don't have to.

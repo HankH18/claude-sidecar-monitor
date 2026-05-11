@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, withRetry } from "../api/client";
 import { mockTree } from "../api/mock";
 import { useMock } from "../api/mode";
 import type { Session, TreeNode } from "../api/types";
 import { useStream } from "./useStream";
+
+// A burst of session_update events (e.g. a scanner tick that hangs 10
+// sessions at once, or a Stop that fires after many late JSONL writes)
+// would otherwise trigger 10 GET /api/tree calls in <1 s. Coalesce to a
+// single refetch with a trailing-edge timer.
+const REFETCH_DEBOUNCE_MS = 350;
 
 /**
  * Collector returns `list[TreeNode]` (one entry per top-level session in the
@@ -100,14 +106,26 @@ export function useTree(worktreeRoot: string | undefined): {
     };
   }, [mock, worktreeRoot, fetchTree]);
 
-  // Refetch the tree when a session in this worktree updates.
+  // Refetch the tree when a session in this worktree updates — debounced
+  // so a burst of SSE events doesn't fan into a burst of GETs.
+  const refetchTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (mock || !worktreeRoot) return;
     if (!lastEvent || lastEvent.kind !== "session_update") return;
+    if (refetchTimerRef.current !== null) {
+      window.clearTimeout(refetchTimerRef.current);
+    }
     const signal = { cancelled: false };
-    fetchTree(worktreeRoot, signal);
+    refetchTimerRef.current = window.setTimeout(() => {
+      refetchTimerRef.current = null;
+      fetchTree(worktreeRoot, signal);
+    }, REFETCH_DEBOUNCE_MS);
     return () => {
       signal.cancelled = true;
+      if (refetchTimerRef.current !== null) {
+        window.clearTimeout(refetchTimerRef.current);
+        refetchTimerRef.current = null;
+      }
     };
   }, [mock, worktreeRoot, lastEvent, fetchTree]);
 

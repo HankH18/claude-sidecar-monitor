@@ -98,8 +98,60 @@ def process_file(conn: Any, path: Path) -> int:
         last_seen=utcnow_iso(),
     )
     if persisted:
+        # If this was the FIRST signal we had of this session (no SessionStart
+        # hook fired yet), the sessions row has worktree_root="". Derive
+        # worktree from the JSONL transcript path so the tree builder can
+        # find a parent. Otherwise the session is permanently orphaned at
+        # the project-root level.
+        _backfill_worktree_and_resolve_parent(conn, path, sid)
         _emit(sid, persisted)
     return persisted
+
+
+def _derive_worktree_from_jsonl_path(jsonl_path: Path) -> str:
+    """Reverse Claude Code's ``cwd → encoded-dirname`` mapping to recover
+    the worktree root.
+
+    Path shape: ``~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl``,
+    where ``<encoded-cwd>`` is the absolute cwd with ``/`` → ``-``. We
+    decode by prefixing ``/`` and replacing ``-`` with ``/``. This is
+    ambiguous if the original path contained a literal ``-`` (e.g.
+    ``/Users/hank-h/foo``); ``resolve_worktree`` walks up to the nearest
+    ``.git`` from the decoded candidate, so a real repo usually surfaces
+    even when the decode isn't pixel-perfect.
+
+    Returns ``""`` if the path doesn't match the Claude Code shape.
+    """
+    from csm.hooks.worktree import resolve_worktree
+
+    encoded = jsonl_path.parent.name
+    if not encoded.startswith("-"):
+        return ""
+    decoded = encoded.replace("-", "/")
+    return resolve_worktree(decoded)
+
+
+def _backfill_worktree_and_resolve_parent(
+    conn: Any, jsonl_path: Path, session_id: str
+) -> None:
+    row = conn.execute(
+        "SELECT worktree_root FROM sessions WHERE session_id=?", (session_id,)
+    ).fetchone()
+    if row is None or row[0]:
+        # Either no row (race) or hooks already populated worktree_root.
+        return
+    derived = _derive_worktree_from_jsonl_path(jsonl_path)
+    if not derived:
+        return
+    from csm.hooks.worktree import project_label
+
+    conn.execute(
+        "UPDATE sessions SET worktree_root = ?, project_label = ? WHERE session_id = ?",
+        (derived, project_label(derived), session_id),
+    )
+    from csm.tree import resolve_parent
+
+    resolve_parent(conn, session_id)
 
 
 def _persist(conn: Any, session_id: str, parsed: ParsedMessage) -> None:

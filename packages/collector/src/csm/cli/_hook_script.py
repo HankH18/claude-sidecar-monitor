@@ -31,9 +31,10 @@ HOOK_SCRIPT = """\
 EVENT_NAME="${1:-unknown}"
 URL="http://127.0.0.1:8765/hook/${EVENT_NAME}"
 
-# `cat -` reads stdin into memory; hook payloads are small (<<64 KiB).
-PAYLOAD="$(cat -)"
-
+# Stream stdin straight into curl via `--data-binary @-` — this avoids
+# `--data`'s trailing-newline trimming and per-line whitespace mangling
+# that can corrupt JSON payloads with embedded newlines (Anthropic's
+# transcript_path values are paths but message.content can be free-form).
 # `--max-time 2` keeps Claude Code responsive even if the collector hangs.
 # `-s` silences progress, `-o /dev/null` discards the (always `{}`) response.
 # We deliberately don't `set -e` — a failed POST must not break Claude Code.
@@ -41,7 +42,7 @@ curl -s -o /dev/null \\
     --max-time 2 \\
     -H "Content-Type: application/json" \\
     -X POST \\
-    --data "${PAYLOAD}" \\
+    --data-binary @- \\
     "${URL}" || true
 
 exit 0

@@ -160,3 +160,68 @@ def test_unkeyed_db_is_plain_sqlite(tmp_db: Path) -> None:
     raw = tmp_db.read_bytes()
     assert raw.startswith(b"SQLite format 3\x00")
     assert b"plaintext" in raw
+
+
+# ────────── Migration atomicity (CRITICAL #3) ──────────
+
+
+def test_split_sql_statements_strips_comments_and_splits_on_semicolons() -> None:
+    """Comments must not be parsed as statement boundaries; only top-level
+    semicolons count."""
+    from csm.db.runner import _split_sql_statements
+
+    sql = """
+    -- top-level comment with a semicolon ; inside
+    CREATE TABLE foo (id INT);
+    /* block comment ; with a fake boundary */
+    CREATE TABLE bar (id INT);
+    """
+    stmts = _split_sql_statements(sql)
+    assert len(stmts) == 2
+    assert stmts[0].lstrip().startswith("CREATE TABLE foo")
+    assert stmts[1].lstrip().startswith("CREATE TABLE bar")
+
+
+def test_migration_atomic_rollback_on_partial_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A migration with a valid statement followed by a failing one must
+    roll back ENTIRELY: the partial CREATE TABLE must not survive AND no
+    _migrations row must be inserted, so the next start retries cleanly.
+    """
+    from csm.db import runner
+
+    # Build a fake migrations dir with one bad migration.
+    fake_dir = tmp_path / "fake-migrations"
+    fake_dir.mkdir()
+    (fake_dir / "099_partially_broken.sql").write_text(
+        "CREATE TABLE atomic_canary (id INTEGER PRIMARY KEY);\n"
+        "INSERT INTO nonexistent_table VALUES (1);\n"
+    )
+
+    monkeypatch.setattr(runner, "_migrations_dir", lambda: fake_dir)
+
+    db_path = tmp_path / "store.db"
+    # connect() runs the standard 001 migration first, then ours.
+    with pytest.raises(sqlcipher3.OperationalError):
+        connect(db_path=db_path)
+
+    # On the next open (no apply this time — we're after the failure),
+    # the canary table must NOT exist and the migration must NOT be
+    # recorded as applied. Re-attaching the runner is enough to assert
+    # the rollback worked.
+    monkeypatch.undo()  # restore real _migrations_dir for the verification open
+    conn = connect(db_path=db_path)
+    try:
+        # No canary table should exist (rollback erased the CREATE).
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='atomic_canary'"
+        ).fetchall()
+        assert rows == []
+        # 099 was NOT recorded as applied.
+        applied = {
+            row[0] for row in conn.execute("SELECT version FROM _migrations").fetchall()
+        }
+        assert 99 not in applied
+    finally:
+        conn.close()

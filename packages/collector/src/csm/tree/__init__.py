@@ -54,10 +54,19 @@ class TreeNodeData:
 
 
 def _parse_iso(s: str) -> datetime:
-    """Parse an ISO 8601 UTC timestamp (with or without trailing Z)."""
+    """Parse an ISO 8601 UTC timestamp (with or without trailing Z).
+
+    Returns a timezone-aware datetime in UTC. Naive timestamps (no zone)
+    are interpreted as UTC — that matches the convention we use in
+    ``utcnow_iso`` and in every SQL timestamp we write — but explicit so
+    arithmetic with aware datetimes elsewhere doesn't raise.
+    """
     if s.endswith("Z"):
         s = s[:-1] + "+00:00"
-    return datetime.fromisoformat(s)
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
 
 
 def _format_iso(dt: datetime) -> str:
@@ -146,6 +155,11 @@ def build_project_tree(conn: Any, worktree_root: str) -> list[TreeNodeData]:
 
     node_by_id: dict[str, TreeNodeData] = {}
     children_of: dict[str, list[TreeNodeData]] = {}
+    # Precompute the set of session_ids that have a parent so the roots
+    # filter runs in O(N) instead of the original O(N²) `next(r for r in
+    # rows ...)` scan. With 200 sessions per project the difference is 200
+    # iterations vs 40,000.
+    has_parent: set[str] = set()
 
     for r in rows:
         node = TreeNodeData(
@@ -165,6 +179,7 @@ def build_project_tree(conn: Any, worktree_root: str) -> list[TreeNodeData]:
         parent = r[1]
         if parent:
             children_of.setdefault(parent, []).append(node)
+            has_parent.add(r[0])
 
     # Wire children into their parent nodes.
     for parent_id, kids in children_of.items():
@@ -173,12 +188,5 @@ def build_project_tree(conn: Any, worktree_root: str) -> list[TreeNodeData]:
             continue
         parent_node.children = sorted(kids, key=lambda n: n.started_at)
 
-    roots = [
-        node
-        for sid, node in node_by_id.items()
-        if not next(
-            (r for r in rows if r[0] == sid and r[1]),
-            None,
-        )
-    ]
+    roots = [node for sid, node in node_by_id.items() if sid not in has_parent]
     return sorted(roots, key=lambda n: n.started_at)

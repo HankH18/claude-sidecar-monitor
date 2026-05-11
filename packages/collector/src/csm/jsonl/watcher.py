@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from threading import RLock
+from threading import RLock, Thread
 from typing import Any
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
@@ -75,20 +75,42 @@ class JsonlWatcher:
         self._lock = RLock()
 
     def start(self) -> None:
-        """Catch up existing files, then begin watching."""
+        """Begin watching + catch up existing files in a background thread.
+
+        Begin FSEvents subscription FIRST so we don't miss new writes
+        while we walk history. The catch-up scan runs in a daemon thread
+        so a large historical projects/ dir (thousands of JSONL files
+        for users with long Claude Code history) doesn't block server
+        startup. The thread re-enters ``self.process`` which is guarded
+        by ``self._lock``, so concurrent FSEvents callbacks during the
+        catch-up are serialised at the DB.
+        """
         if not self.projects_dir.exists():
             log.info("jsonl: projects dir %s missing; nothing to watch", self.projects_dir)
             return
-
-        # Initial scan — catch up every existing JSONL.
-        for jsonl in self.projects_dir.rglob("*.jsonl"):
-            self.process(jsonl)
 
         observer = Observer()
         observer.schedule(_JsonlHandler(self), str(self.projects_dir), recursive=True)
         observer.start()
         self._observer = observer
-        log.info("jsonl: watching %s", self.projects_dir)
+        log.info("jsonl: watching %s; initial scan running in background", self.projects_dir)
+
+        scan = Thread(
+            target=self._initial_scan,
+            name="csm-jsonl-initial-scan",
+            daemon=True,
+        )
+        scan.start()
+
+    def _initial_scan(self) -> None:
+        try:
+            count = 0
+            for jsonl in self.projects_dir.rglob("*.jsonl"):
+                self.process(jsonl)
+                count += 1
+            log.info("jsonl: initial scan complete (%d files)", count)
+        except Exception:
+            log.exception("jsonl: initial scan failed")
 
     def stop(self, *, timeout: float = 2.0) -> None:
         if self._observer is None:

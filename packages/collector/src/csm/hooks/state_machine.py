@@ -331,4 +331,21 @@ def _emit(snapshot: SessionSnapshot, event_name: str, received_at: str) -> None:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return  # no loop — caller is sync (test path); skip emission
-    asyncio.run_coroutine_threadsafe(bus.publish(bus_event), loop)
+    fut = asyncio.run_coroutine_threadsafe(bus.publish(bus_event), loop)
+    # Surface bus-publish failures in the log instead of dropping silently.
+    # The future is "free-running" but we attach a done callback that
+    # raises into a logger if it errors. Cancelled is benign.
+    import logging
+    from concurrent.futures import Future
+
+    def _check(f: Future[Any]) -> None:
+        try:
+            exc = f.exception(timeout=0)
+        except Exception:
+            return
+        if exc is not None:
+            logging.getLogger(__name__).warning(
+                "bus publish for session %s raised: %r", snapshot.session_id, exc
+            )
+
+    fut.add_done_callback(_check)

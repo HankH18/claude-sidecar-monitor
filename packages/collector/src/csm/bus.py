@@ -38,9 +38,17 @@ class Bus:
     async def publish(self, event: BusEvent) -> None:
         async with self._lock:
             for queue in list(self._subscribers):
-                # Drop on full to avoid back-pressure into the receiver.
-                # SSE consumers that fall behind will just miss frames;
-                # the database is the source of truth.
+                # Drop the OLDEST queued event when a subscriber's queue
+                # is full, then enqueue the new one. This protects the
+                # publisher (which may be the receiver thread, the JSONL
+                # watcher, the scanner, or the token aggregator emitting
+                # back at itself) from back-pressure caused by ANY single
+                # slow subscriber — e.g. an SSE client on a phone that's
+                # behind a flaky tailnet. Dropped events show up in
+                # ``transcript_messages`` / ``sessions`` / ``events`` —
+                # the database is the source of truth; SSE is a best-
+                # effort live channel. Slow consumers reconnect and
+                # /api/state refetches the latest snapshot.
                 if queue.full():
                     with contextlib.suppress(asyncio.QueueEmpty):
                         queue.get_nowait()

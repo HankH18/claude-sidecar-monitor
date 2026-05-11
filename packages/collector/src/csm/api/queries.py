@@ -208,7 +208,11 @@ def top_projects(conn: Any, *, limit: int = 10) -> list[TopProject]:
         """
         SELECT
             worktree_root,
-            COALESCE(MAX(project_label), worktree_root),
+            -- Use MIN(project_label) for deterministic output when sessions
+            -- in the same worktree disagree on label (rare: a user moved
+            -- cwd between sessions). MAX would be equally arbitrary but
+            -- MIN is sortable and reproducible across runs.
+            COALESCE(MIN(project_label), worktree_root),
             COUNT(*) AS session_count,
             COALESCE(SUM(input_tokens), 0),
             COALESCE(SUM(output_tokens), 0),

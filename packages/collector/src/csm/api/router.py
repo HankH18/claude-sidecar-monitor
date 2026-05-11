@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -98,8 +99,19 @@ async def get_transcript(
     limit: int = Query(100, ge=1, le=500),
 ) -> TranscriptPage:
     db = _db(request)
-    messages = await asyncio.to_thread(list_transcript, db, session_id, after=cursor, limit=limit)
-    next_cursor = messages[-1].message_id if len(messages) == limit else None
+    # Query limit+1 to detect whether more rows exist BEYOND this page
+    # without needing the client to round-trip an empty next-page request.
+    # If we get back limit+1 rows we know there's more; trim and emit a
+    # cursor. If we get back ≤limit rows, this was the tail.
+    rows = await asyncio.to_thread(
+        list_transcript, db, session_id, after=cursor, limit=limit + 1
+    )
+    if len(rows) > limit:
+        messages = rows[:limit]
+        next_cursor: int | None = messages[-1].message_id
+    else:
+        messages = rows
+        next_cursor = None
     return TranscriptPage(messages=messages, next_cursor=next_cursor)
 
 
@@ -116,18 +128,32 @@ async def get_tree(request: Request, worktree: str = Query(..., min_length=1)) -
 
 
 @router.get("/api/tokens", response_model=TokensResponse)
-async def get_tokens(request: Request) -> TokensResponse:
+async def get_tokens(
+    request: Request,
+    top_sessions_hours: int = Query(
+        24,
+        ge=1,
+        le=24 * 30,
+        description="Window for 'top sessions' (hours back from now).",
+    ),
+    daily_days: int = Query(
+        14,
+        ge=1,
+        le=90,
+        description="Window for the daily-totals chart (days back from now).",
+    ),
+) -> TokensResponse:
     db = _db(request)
     now = datetime.now(tz=UTC)
-    since = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    fortnight_start = (now - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    fortnight_end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    since = (now - timedelta(hours=top_sessions_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    daily_start = (now - timedelta(days=daily_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    daily_end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     return TokensResponse(
         topSessions=await asyncio.to_thread(top_sessions, db, since=since),
         topProjects=await asyncio.to_thread(top_projects, db),
         totalsByModel=await asyncio.to_thread(totals_by_model, db),
-        dailyTotals=await asyncio.to_thread(daily_totals, db, fortnight_start, fortnight_end),
+        dailyTotals=await asyncio.to_thread(daily_totals, db, daily_start, daily_end),
     )
 
 
@@ -214,27 +240,68 @@ async def stream(request: Request) -> EventSourceResponse:
     queue = await bus.subscribe()
 
     async def generator() -> AsyncIterator[dict[str, Any]]:
+        # Race queue.get() against a disconnect watcher so a closed client
+        # is noticed quickly, not only when the next bus event or 15-s
+        # heartbeat arrives. Without this, a phone tab closing during a
+        # quiet period holds a 256-event queue + lock contention for up
+        # to 15 s — non-fatal but multiplies across reopened tabs.
+        disconnect_event = asyncio.Event()
+
+        async def _watch_disconnect() -> None:
+            try:
+                while not disconnect_event.is_set():
+                    if await request.is_disconnected():
+                        disconnect_event.set()
+                        return
+                    # 250 ms cadence is well under the 15 s heartbeat and
+                    # under any reasonable user-perception threshold while
+                    # being light on the event loop.
+                    await asyncio.sleep(0.25)
+            except asyncio.CancelledError:
+                raise
+
+        watcher = asyncio.create_task(_watch_disconnect(), name="csm-sse-disconnect")
         try:
-            while True:
-                if await request.is_disconnected():
-                    break
+            while not disconnect_event.is_set():
+                get_task = asyncio.create_task(queue.get())
+                wait_task = asyncio.create_task(disconnect_event.wait())
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except TimeoutError:
-                    # heartbeat to keep proxies/Tailscale paths warm
+                    done, _pending = await asyncio.wait(
+                        {get_task, wait_task},
+                        timeout=15.0,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                finally:
+                    # Whatever didn't finish: cancel + drain.
+                    for t in (get_task, wait_task):
+                        if not t.done():
+                            t.cancel()
+                            with contextlib.suppress(
+                                asyncio.CancelledError, BaseException
+                            ):
+                                await t
+                if disconnect_event.is_set():
+                    break
+                if get_task in done:
+                    event = get_task.result()
+                    yield {
+                        "event": "message",
+                        "data": json.dumps(
+                            {
+                                "kind": event.kind,
+                                "session_id": event.session_id,
+                                "data": event.data,
+                            }
+                        ),
+                    }
+                else:
+                    # 15-s heartbeat — keeps Tailscale Serve / iOS proxy
+                    # paths warm in the absence of bus traffic.
                     yield {"event": "ping", "data": "{}"}
-                    continue
-                yield {
-                    "event": "message",
-                    "data": json.dumps(
-                        {
-                            "kind": event.kind,
-                            "session_id": event.session_id,
-                            "data": event.data,
-                        }
-                    ),
-                }
         finally:
+            watcher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watcher
             await bus.unsubscribe(queue)
 
     return EventSourceResponse(generator())
