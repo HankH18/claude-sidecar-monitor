@@ -33,8 +33,22 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // SSE responses must not be cached
-        navigateFallbackDenylist: [/^\/stream/, /^\/api\//, /^\/hook\//, /^\/healthz/],
+        // SSE responses must not be cached. /api/openapi.json and /api/docs
+        // are auto-mounted by FastAPI — keep them out of the precache too.
+        navigateFallbackDenylist: [
+          /^\/stream/,
+          /^\/api\//,
+          /^\/hook\//,
+          /^\/healthz/,
+        ],
+        // After a deploy with new hashed JS/CSS, the old precached HTML
+        // shell references stale asset hashes; without skipWaiting+clientsClaim
+        // an iOS standalone PWA can serve the shell, then 404 on the new
+        // assets until the user fully closes and re-opens the app. Force
+        // the new service worker active immediately and take control of
+        // open clients so the next navigation fetches the fresh shell.
+        skipWaiting: true,
+        clientsClaim: true,
       },
     }),
   ],

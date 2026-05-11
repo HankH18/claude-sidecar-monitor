@@ -64,16 +64,19 @@ def process_file(conn: Any, path: Path) -> int:
         fh.seek(start_offset)
         chunk = fh.read()
 
-    text = chunk.decode("utf-8", errors="replace")
-    if not text.endswith("\n"):
-        # Keep the partial line for next round — only advance offset
-        # past the last completed newline.
-        last_nl = text.rfind("\n")
-        if last_nl == -1:
-            return 0
-        text = text[: last_nl + 1]
-
-    new_offset = start_offset + len(text.encode("utf-8"))
+    # Find the last newline in RAW BYTES — never re-encode decoded text for
+    # offset arithmetic. The UTF-8 decoder's ``errors="replace"`` substitutes
+    # U+FFFD (3 bytes encoded) for any invalid sequence, so
+    # ``len(text.encode("utf-8"))`` drifts relative to the original file
+    # whenever a malformed byte appears. Working on bytes keeps the offset
+    # exactly aligned even through corrupted regions.
+    last_nl = chunk.rfind(b"\n")
+    if last_nl == -1:
+        # Whole chunk is a partial line — defer until a newline arrives.
+        return 0
+    raw_complete = chunk[: last_nl + 1]
+    new_offset = start_offset + len(raw_complete)
+    text = raw_complete.decode("utf-8", errors="replace")
     sid = session_id_from_path(path)
     persisted = 0
     for line in text.splitlines():

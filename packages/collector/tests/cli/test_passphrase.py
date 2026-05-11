@@ -78,7 +78,7 @@ def test_change_passphrase_round_trip(
     db_path = isolated_paths / "support" / "store.db"
     salt_path.parent.mkdir(parents=True, exist_ok=True)
 
-    old_key = _seed_db("alpha", salt_path, db_path)
+    old_key = _seed_db("alpha-passphrase", salt_path, db_path)
 
     # Force the CLI's rotate to use FAST_KDF so the test stays under a
     # second. The CLI itself doesn't take params; we patch the default
@@ -92,7 +92,11 @@ def test_change_passphrase_round_trip(
     monkeypatch.setattr("csm.cli.passphrase.crypto.rotate_passphrase", fast_rotate)
 
     runner = CliRunner()
-    result = runner.invoke(cli_app, ["change-passphrase"], input="alpha\nbravo\nbravo\n")
+    result = runner.invoke(
+        cli_app,
+        ["change-passphrase"],
+        input="alpha-passphrase\nbravo-passphrase\nbravo-passphrase\n",
+    )
     assert result.exit_code == 0, result.stdout
     assert "rotated" in result.stdout.lower()
 
@@ -122,7 +126,7 @@ def test_change_passphrase_wrong_old_passphrase(
     salt_path = isolated_paths / "support" / "store.salt"
     db_path = isolated_paths / "support" / "store.db"
     salt_path.parent.mkdir(parents=True, exist_ok=True)
-    _seed_db("alpha", salt_path, db_path)
+    _seed_db("alpha-passphrase", salt_path, db_path)
 
     real_rotate = crypto.rotate_passphrase
 
@@ -133,9 +137,37 @@ def test_change_passphrase_wrong_old_passphrase(
     monkeypatch.setattr("csm.cli.passphrase.crypto.rotate_passphrase", fast_rotate)
 
     runner = CliRunner()
-    result = runner.invoke(cli_app, ["change-passphrase"], input="WRONG\nbravo\nbravo\n")
+    result = runner.invoke(
+        cli_app,
+        ["change-passphrase"],
+        input="WRONG-passphrase\nbravo-passphrase\nbravo-passphrase\n",
+    )
     assert result.exit_code == 1
     # Existing key in Keychain is unchanged.
     salt = salt_path.read_bytes()
-    expected_key = derive_key("alpha", salt, FAST_KDF)
+    expected_key = derive_key("alpha-passphrase", salt, FAST_KDF)
+    assert get_key_from_keychain() == expected_key
+
+
+def test_change_passphrase_rejects_short_new_passphrase(
+    isolated_paths: Path,
+    keychain_stub: dict[Any, Any],
+) -> None:
+    """A new passphrase shorter than MIN_PASSPHRASE_LEN must be rejected
+    before any rekey attempt — exit code 2, no Keychain mutation."""
+    salt_path = isolated_paths / "support" / "store.salt"
+    db_path = isolated_paths / "support" / "store.db"
+    salt_path.parent.mkdir(parents=True, exist_ok=True)
+    _seed_db("alpha-passphrase", salt_path, db_path)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_app,
+        ["change-passphrase"],
+        input="alpha-passphrase\nshort\nshort\n",
+    )
+    assert result.exit_code == 2
+    # Keychain still holds the original key.
+    salt = salt_path.read_bytes()
+    expected_key = derive_key("alpha-passphrase", salt, FAST_KDF)
     assert get_key_from_keychain() == expected_key

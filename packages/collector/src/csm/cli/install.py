@@ -28,6 +28,7 @@ from csm import crypto
 from csm.cli.hooks import install_hooks
 from csm.cli.launchd import plist_install_path, uninstall_launchd
 from csm.config import Paths
+from csm.crypto import MIN_PASSPHRASE_LEN
 from csm.db import connect
 
 
@@ -72,6 +73,14 @@ def install_command(
         hide_input=True,
         confirmation_prompt=True,
     )
+    if len(passphrase) < MIN_PASSPHRASE_LEN:
+        typer.echo(
+            f"Error: passphrase must be at least {MIN_PASSPHRASE_LEN} characters "
+            "(empty/short passphrases give false confidence — the store would "
+            "be trivially brute-forceable).",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     if not dry_run:
         crypto.first_run_setup(passphrase, paths.salt)
         typer.echo(f"Derived key cached in Keychain (salt at {paths.salt}).")

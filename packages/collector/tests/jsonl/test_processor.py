@@ -188,6 +188,28 @@ def test_session_row_auto_created(db, tmp_path: Path) -> None:
     assert row is not None
 
 
+def test_offset_stable_across_corrupted_utf8(db, tmp_path: Path) -> None:
+    """The byte offset must advance by raw-byte count, not by decoded-text
+    re-encoded length. A bad byte that decodes to U+FFFD (3 bytes) would
+    cause the offset to drift if we re-encode the text; this test asserts
+    we stay aligned to the actual file size.
+    """
+    f = tmp_path / "abc-123.jsonl"
+    good_line = _line().encode("utf-8")
+    # Insert one isolated bad byte (0xFF) that decode("utf-8", errors="replace")
+    # turns into U+FFFD — would be 3 bytes if re-encoded.
+    corrupted = good_line + b"\xff\n" + good_line
+    f.write_bytes(corrupted)
+
+    process_file(db, f)
+    from csm.jsonl.offsets import get_offset
+
+    offset = get_offset(db, f)
+    assert offset is not None
+    # Offset must equal the actual file size, not the re-encoded text length.
+    assert offset.byte_offset == f.stat().st_size
+
+
 def test_repeat_call_no_new_content_is_noop(db, tmp_path: Path) -> None:
     f = tmp_path / "abc-123.jsonl"
     f.write_text(_line())

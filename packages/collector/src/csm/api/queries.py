@@ -131,26 +131,37 @@ def project_tree(conn: Any, worktree_root: str) -> list[TreeNode]:
 def _to_tree_node(conn: Any, node: Any) -> TreeNode:
     children = [_to_tree_node(conn, c) for c in node.children]
     subtree = get_subtree_tokens(conn, node.session_id)
-    session = Session(
-        session_id=node.session_id,
-        parent_session_id=None,  # filled by caller from build_project_tree if needed
-        worktree_root="",  # not carried on TreeNodeData; client uses URL param
-        project_label=None,
-        cwd="",
-        transcript_path=None,
-        agent_type=node.agent_type,
-        state=node.state,
-        last_event_at=node.last_event_at,
-        last_event_name=None,
-        last_tool_name=node.last_tool_name,
-        started_at=node.started_at,
-        completed_at=None,
-        primary_model=node.primary_model,
-        input_tokens=node.input_tokens,
-        output_tokens=node.output_tokens,
-        cache_read_tokens=node.cache_read_tokens,
-        cache_write_tokens=node.cache_write_tokens,
-    )
+    # The TreeNodeData carries only the columns build_project_tree selected;
+    # fetch the full row so consumers get worktree_root / cwd / project_label /
+    # parent_session_id / transcript_path / last_event_name — all of which the
+    # dashboard's ProjectDetail page links and labels against. The recursive
+    # CTE depth is bounded by the agent tree (typically ≤5), so the extra
+    # SELECT per node is negligible.
+    session = get_session(conn, node.session_id)
+    if session is None:
+        # Race: the row was deleted between build_project_tree and now.
+        # Fall back to the partial info we already have so the tree
+        # response is still well-shaped.
+        session = Session(
+            session_id=node.session_id,
+            parent_session_id=None,
+            worktree_root="",
+            project_label=None,
+            cwd="",
+            transcript_path=None,
+            agent_type=node.agent_type,
+            state=node.state,
+            last_event_at=node.last_event_at,
+            last_event_name=None,
+            last_tool_name=node.last_tool_name,
+            started_at=node.started_at,
+            completed_at=None,
+            primary_model=node.primary_model,
+            input_tokens=node.input_tokens,
+            output_tokens=node.output_tokens,
+            cache_read_tokens=node.cache_read_tokens,
+            cache_write_tokens=node.cache_write_tokens,
+        )
     return TreeNode(
         session=session,
         children=children,

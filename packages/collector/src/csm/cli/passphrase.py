@@ -7,6 +7,7 @@ import typer
 
 from csm import crypto
 from csm.config import Paths
+from csm.crypto import MIN_PASSPHRASE_LEN
 
 
 def change_passphrase_command() -> None:
@@ -25,6 +26,12 @@ def change_passphrase_command() -> None:
         hide_input=True,
         confirmation_prompt=True,
     )
+    if len(new_passphrase) < MIN_PASSPHRASE_LEN:
+        typer.echo(
+            f"Error: new passphrase must be at least {MIN_PASSPHRASE_LEN} characters.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     try:
         crypto.rotate_passphrase(

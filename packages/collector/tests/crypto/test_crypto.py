@@ -180,3 +180,149 @@ def test_rotation_round_trip(tmp_path: Path, keychain_stub: dict[Any, Any]) -> N
     # Reading with old key fails
     with pytest.raises(sqlcipher3.DatabaseError):
         connect(key=key_a, db_path=db_path)
+
+
+# ────────── pending-rotation recovery ──────────
+
+
+def test_recover_no_pending_returns_primary(tmp_path, keychain_stub) -> None:
+    """The fast path: no rotation in progress → just return what's in
+    Keychain (or None)."""
+    from csm.crypto import recover_from_pending_rotation
+
+    salt_path = tmp_path / "store.salt"
+    db_path = tmp_path / "store.db"
+
+    # Empty Keychain.
+    assert recover_from_pending_rotation(db_path) is None
+
+    # Primary present, no pending.
+    key = first_run_setup("alpha-passphrase", salt_path, params=FAST_KDF)
+    # Ensure DB exists so a future open attempt would be possible.
+    connect(key=key, db_path=db_path).close()
+    assert recover_from_pending_rotation(db_path) == key
+
+
+def test_recover_orphan_pending_when_rekey_never_happened(
+    tmp_path, keychain_stub
+) -> None:
+    """Process died after step 1 (pending stash) but before step 2 (rekey):
+    primary still opens the DB, so recovery deletes the orphan pending."""
+    from csm.crypto import _store_pending_key, recover_from_pending_rotation
+
+    salt_path = tmp_path / "store.salt"
+    db_path = tmp_path / "store.db"
+    key = first_run_setup("alpha-passphrase", salt_path, params=FAST_KDF)
+    connect(key=key, db_path=db_path).close()
+
+    # Simulate the half-rotation: write a pending entry that doesn't match
+    # the DB's actual encryption key.
+    _store_pending_key(secrets.token_bytes(32))
+
+    recovered = recover_from_pending_rotation(db_path)
+    assert recovered == key
+    # Pending was cleaned up.
+    from csm.crypto import _get_pending_key
+
+    assert _get_pending_key() is None
+
+
+def test_recover_promotes_pending_when_rekey_succeeded(
+    tmp_path, keychain_stub
+) -> None:
+    """Process died after step 2 (rekey ran) but before step 3 (primary
+    update): primary fails to open, pending opens. Recovery promotes
+    pending → primary and clears it."""
+    from csm.crypto import (
+        _delete_pending_key,
+        _get_pending_key,
+        _store_pending_key,
+        recover_from_pending_rotation,
+    )
+
+    salt_path = tmp_path / "store.salt"
+    db_path = tmp_path / "store.db"
+
+    # Initial state: primary key opens the DB.
+    key_a = first_run_setup("alpha-passphrase", salt_path, params=FAST_KDF)
+    connect(key=key_a, db_path=db_path).close()
+
+    # Simulate a successful rekey to key_b without the primary-entry update.
+    key_b = secrets.token_bytes(32)
+    conn = connect(key=key_a, db_path=db_path, apply_migrations_on_open=False)
+    try:
+        conn.execute(f"PRAGMA rekey = \"x'{key_b.hex()}'\"")
+    finally:
+        conn.close()
+    # Primary still points at key_a (stale), pending at key_b.
+    _store_pending_key(key_b)
+
+    recovered = recover_from_pending_rotation(db_path)
+    assert recovered == key_b
+    assert get_key_from_keychain() == key_b
+    assert _get_pending_key() is None
+
+    # Cleanup for clarity (already deleted, but double-confirm).
+    _delete_pending_key()
+
+
+def test_recover_returns_none_when_neither_key_works(
+    tmp_path, keychain_stub
+) -> None:
+    """Both primary and pending are wrong (deeply broken Keychain state):
+    return None and leave pending in place for diagnostic visibility."""
+    from csm.crypto import _get_pending_key, _store_pending_key, recover_from_pending_rotation
+
+    salt_path = tmp_path / "store.salt"
+    db_path = tmp_path / "store.db"
+    real_key = first_run_setup("alpha-passphrase", salt_path, params=FAST_KDF)
+    connect(key=real_key, db_path=db_path).close()
+
+    # Now stomp both Keychain entries with garbage.
+    store_key_in_keychain(secrets.token_bytes(32))
+    _store_pending_key(secrets.token_bytes(32))
+
+    assert recover_from_pending_rotation(db_path) is None
+    # Pending NOT cleaned up — diagnostic value.
+    assert _get_pending_key() is not None
+
+
+def test_rotation_cleans_pending_on_success(tmp_path, keychain_stub) -> None:
+    """The normal successful rotation path leaves NO pending entry."""
+    from csm.crypto import _get_pending_key
+
+    salt_path = tmp_path / "store.salt"
+    db_path = tmp_path / "store.db"
+    first_run_setup("alpha-passphrase", salt_path, params=FAST_KDF)
+    connect(key=get_key_from_keychain(), db_path=db_path).close()  # type: ignore[arg-type]
+
+    rotate_passphrase(
+        "alpha-passphrase",
+        "bravo-passphrase",
+        salt_path=salt_path,
+        db_path=db_path,
+        params=FAST_KDF,
+    )
+    assert _get_pending_key() is None
+
+
+def test_rotation_clears_pending_on_failure(tmp_path, keychain_stub) -> None:
+    """If the rekey raises, pending must be cleaned up and the original
+    primary key must remain untouched."""
+    from csm.crypto import _get_pending_key
+
+    salt_path = tmp_path / "store.salt"
+    db_path = tmp_path / "store.db"
+    original = first_run_setup("alpha-passphrase", salt_path, params=FAST_KDF)
+    connect(key=original, db_path=db_path).close()
+
+    with pytest.raises(sqlcipher3.DatabaseError):
+        rotate_passphrase(
+            "WRONG-passphrase",  # wrong old → connect raises
+            "bravo-passphrase",
+            salt_path=salt_path,
+            db_path=db_path,
+            params=FAST_KDF,
+        )
+    assert _get_pending_key() is None
+    assert get_key_from_keychain() == original

@@ -176,6 +176,15 @@ def test_get_tree(client: TestClient) -> None:
     assert alpha["subtree_tokens"]["input"] == 800  # 500 + 300
     assert alpha["subtree_tokens"]["output"] == 1600
     assert alpha["subtree_tokens"]["descendant_count"] == 1
+    # Tree node Session payloads must carry full identifying fields — the
+    # dashboard's ProjectDetail links against worktree_root / project_label /
+    # parent_session_id, and the page header shows the project label.
+    assert alpha["session"]["worktree_root"] == "/tmp/proj-a"
+    assert alpha["session"]["project_label"] == "proj-a"
+    assert alpha["session"]["parent_session_id"] is None
+    beta = next(c for c in alpha["children"] if c["session"]["session_id"] == "beta")
+    assert beta["session"]["worktree_root"] == "/tmp/proj-a"
+    assert beta["session"]["parent_session_id"] == "alpha"
 
 
 def test_get_tree_empty_for_unknown_worktree(client: TestClient) -> None:
@@ -227,6 +236,33 @@ def test_patch_settings_partial(client: TestClient) -> None:
     assert r.status_code == 200
     assert r.json()["hang_yellow_ms"] == 90000
     assert r.json()["hang_red_ms"] == 180000  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_patch_settings_emits_settings_changed_event(app: FastAPI) -> None:
+    """PATCH /api/settings must publish a `settings_changed` BusEvent so the
+    dashboard's useSettings hook picks up the new thresholds live."""
+    queue = await bus.subscribe()
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            r = await c.patch("/api/settings", json={"ntfy_topic": "csm-new"})
+        assert r.status_code == 200
+        # Drain the bus until we see settings_changed (other events may have
+        # been published since fixture setup).
+        evt = None
+        for _ in range(8):
+            try:
+                evt = await asyncio.wait_for(queue.get(), timeout=0.5)
+            except TimeoutError:
+                break
+            if evt.kind == "settings_changed":
+                break
+        assert evt is not None
+        assert evt.kind == "settings_changed"
+        assert evt.data["ntfy_topic"] == "csm-new"
+    finally:
+        await bus.unsubscribe(queue)
 
 
 # ────────── /stream (SSE) ──────────

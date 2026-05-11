@@ -171,11 +171,20 @@ async def patch_settings(patch: SettingsPatch, request: Request) -> Settings:
         return get_settings_dict(db)
 
     raw = await asyncio.to_thread(_apply)
-    return Settings(
+    response = Settings(
         hang_yellow_ms=int(raw.get("hang_yellow_ms", "60000")),
         hang_red_ms=int(raw.get("hang_red_ms", "180000")),
         ntfy_topic=raw.get("ntfy_topic", ""),
     )
+    # Notify SSE subscribers so the dashboard's useSettings hook can pick up
+    # the new thresholds without a manual reload. Per docs/spec.md §7 SSE
+    # event kinds.
+    from csm.bus import BusEvent
+
+    await bus.publish(
+        BusEvent(kind="settings_changed", session_id=None, data=response.model_dump())
+    )
+    return response
 
 
 # ────────────────────── /api/test-notification ──────────────────────

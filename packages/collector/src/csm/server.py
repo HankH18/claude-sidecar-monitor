@@ -34,14 +34,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     paths = Paths.from_env()
 
-    # Try to load the encryption key from Keychain. If it's missing,
-    # we fall back to an unencrypted DB so dev/test boots cleanly.
-    # Production ``csm install`` is responsible for setting the key.
+    # Try to load the encryption key from Keychain. If a pending-rotation
+    # entry exists (passphrase rotation died mid-sequence), the crypto
+    # module figures out which key actually opens the DB and cleans up.
+    # If both are missing, fall back to an unencrypted DB so dev/test boots
+    # cleanly. Production ``csm install`` is responsible for the initial key.
     key: bytes | None = None
     try:
-        from csm.crypto import get_key_from_keychain
+        from csm.crypto import recover_from_pending_rotation
 
-        key = get_key_from_keychain()
+        key = recover_from_pending_rotation(paths.db)
     except Exception:
         key = None
 

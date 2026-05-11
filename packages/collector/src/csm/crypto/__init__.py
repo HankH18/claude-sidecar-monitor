@@ -23,6 +23,7 @@ import getpass
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import keyring
 import keyring.errors
@@ -33,11 +34,14 @@ from csm.db import connect, hex_key
 
 __all__ = [
     "DEFAULT_KDF",
+    "MIN_PASSPHRASE_LEN",
     "KdfParams",
+    "delete_key_from_keychain",
     "derive_key",
     "first_run_setup",
     "get_key_from_keychain",
     "load_or_create_salt",
+    "recover_from_pending_rotation",
     "rotate_passphrase",
     "store_key_in_keychain",
 ]
@@ -58,6 +62,14 @@ class KdfParams:
 
 
 DEFAULT_KDF = KdfParams(time_cost=3, memory_cost=64 * 1024, parallelism=4)
+
+# Minimum passphrase length. Argon2id will happily derive a 32-byte key
+# from any non-empty string, but a 0- or 1-character passphrase makes the
+# resulting "encryption" trivially brute-forceable while leaving the user
+# with false confidence. The CLI install + change-passphrase paths both
+# enforce this floor up front. Tests can override via direct
+# ``derive_key()`` calls (which bypass this constant).
+MIN_PASSPHRASE_LEN = 8
 
 
 def derive_key(
@@ -119,6 +131,89 @@ def delete_key_from_keychain() -> None:
         keyring.delete_password(KEYCHAIN_SERVICE, _account())
 
 
+# ────────────────────── pending-rotation crash recovery ──────────────────────
+# Passphrase rotation has three discrete steps (write pending key, PRAGMA
+# rekey, swap primary key) and process death between any two leaves the
+# system in a recoverable but inconsistent state. We stash the new key under
+# a SECONDARY Keychain account during rotation so startup can detect a
+# half-rotated state and roll the system forward (or back) deterministically.
+
+_PENDING_SUFFIX = ".pending-rotation"
+
+
+def _pending_account() -> str:
+    return _account() + _PENDING_SUFFIX
+
+
+def _store_pending_key(key: bytes) -> None:
+    if len(key) != 32:
+        raise ValueError(f"expected 32-byte key, got {len(key)} bytes")
+    keyring.set_password(KEYCHAIN_SERVICE, _pending_account(), hex_key(key))
+
+
+def _get_pending_key() -> bytes | None:
+    raw = keyring.get_password(KEYCHAIN_SERVICE, _pending_account())
+    return bytes.fromhex(raw) if raw is not None else None
+
+
+def _delete_pending_key() -> None:
+    with contextlib.suppress(keyring.errors.PasswordDeleteError):
+        keyring.delete_password(KEYCHAIN_SERVICE, _pending_account())
+
+
+def recover_from_pending_rotation(db_path: Path) -> bytes | None:
+    """If a pending-rotation Keychain entry is present, figure out which key
+    actually opens the DB (primary or pending) and clean up.
+
+    Returns the working key (the one to pass to ``connect``), or ``None``
+    if neither key works (genuine data loss — caller should surface a
+    clear error and direct the user to ``csm purge --reset-passphrase``).
+
+    Safe to call on every startup; the no-pending-entry fast path is a
+    single Keychain read.
+    """
+    primary = get_key_from_keychain()
+    pending = _get_pending_key()
+    if pending is None:
+        return primary  # No rotation in progress — fast path.
+
+    # Case 1: primary opens. Pending was orphaned (rotation died BEFORE
+    # rekey actually mutated the DB). Roll forward by deleting pending.
+    if primary is not None:
+        try:
+            conn = _try_open(db_path, primary)
+        except Exception:
+            conn = None
+        if conn is not None:
+            conn.close()
+            _delete_pending_key()
+            return primary
+
+    # Case 2: pending opens. rekey ran but the primary-entry update didn't.
+    # Promote pending to primary, then clear it.
+    try:
+        conn = _try_open(db_path, pending)
+    except Exception:
+        conn = None
+    if conn is not None:
+        conn.close()
+        store_key_in_keychain(pending)
+        _delete_pending_key()
+        return pending
+
+    # Neither key works. Pending is bookkeeping; do NOT delete it
+    # (a future doctor invocation needs to see something is wrong).
+    return None
+
+
+def _try_open(db_path: Path, key: bytes) -> Any:
+    """Open with the given key. Raises on wrong-key. Avoids module-cycle by
+    importing db.connect lazily — crypto.connect would be circular."""
+    from csm.db import connect
+
+    return connect(key=key, db_path=db_path, apply_migrations_on_open=False)
+
+
 def first_run_setup(
     passphrase: str,
     salt_path: Path,
@@ -143,20 +238,42 @@ def rotate_passphrase(
     """Open the DB with the old key, ``PRAGMA rekey`` to the new key,
     update Keychain. Returns the new raw key.
 
-    SQLCipher 4 ``PRAGMA rekey`` rewrites every page atomically with the
-    new key; if the old passphrase is wrong, the open itself will fail
-    before any write happens. The DB connection is closed before
-    returning so callers don't accidentally hold a stale handle.
+    Crash-recovery sequence (see ``recover_from_pending_rotation``):
+
+    1. Stash the new key under a transient ``.pending-rotation`` Keychain
+       entry. If we die before step 2, primary still opens the DB; recovery
+       deletes the orphan pending entry.
+    2. ``PRAGMA rekey`` the DB to the new key. If we die between step 2 and
+       step 3, primary fails to open but pending opens; recovery promotes
+       pending and deletes it.
+    3. Promote: write the new key to the primary Keychain entry, then delete
+       the pending entry. Either order leaves a recoverable state.
+
+    If ``PRAGMA rekey`` itself raises, the DB hasn't been mutated (SQLCipher
+    is atomic); we delete the pending entry and re-raise so the CLI shows
+    a clean wrong-passphrase error.
     """
     salt = load_or_create_salt(salt_path)
     old_key = derive_key(old_passphrase, salt, params)
     new_key = derive_key(new_passphrase, salt, params)
 
-    conn = connect(key=old_key, db_path=db_path, apply_migrations_on_open=False)
+    # Step 1 — stash pending.
+    _store_pending_key(new_key)
     try:
-        conn.execute(f"PRAGMA rekey = \"x'{hex_key(new_key)}'\"")
-    finally:
-        conn.close()
+        # Step 2 — rekey.
+        conn = connect(key=old_key, db_path=db_path, apply_migrations_on_open=False)
+        try:
+            conn.execute(f"PRAGMA rekey = \"x'{hex_key(new_key)}'\"")
+        finally:
+            conn.close()
+    except Exception:
+        # rekey failed — DB is still encrypted with old_key (atomic per
+        # SQLCipher). Clear the pending entry so the next start doesn't see
+        # a stale rotation marker, and re-raise.
+        _delete_pending_key()
+        raise
 
+    # Step 3 — promote, then clear pending.
     store_key_in_keychain(new_key)
+    _delete_pending_key()
     return new_key
