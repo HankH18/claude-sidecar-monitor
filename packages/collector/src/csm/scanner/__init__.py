@@ -83,11 +83,24 @@ def scan_once(conn: Any, *, now: datetime | None = None) -> list[str]:
         if elapsed_ms <= red:
             continue
 
-        conn.execute(
-            "UPDATE sessions SET state = 'hung' WHERE session_id = ? "
-            "AND state IN ('running', 'tool')",
-            (sid,),
+        # Compare-and-swap on ``last_event_at`` to avoid racing the receiver.
+        # If a new hook event landed for this session between our SELECT and
+        # our UPDATE, ``last_event_at`` will have moved and the WHERE clause
+        # won't match — the UPDATE no-ops and rowcount==0 tells us to skip
+        # the hang emission. SQLite's per-statement atomicity guarantees the
+        # WHERE matches against the row's current (post-receiver) state.
+        cursor = conn.execute(
+            "UPDATE sessions SET state = 'hung' "
+            "WHERE session_id = ? "
+            "AND state IN ('running', 'tool') "
+            "AND last_event_at = ?",
+            (sid, last_at),
         )
+        if cursor.rowcount == 0:
+            # Receiver wrote a new event for this session between our
+            # SELECT and our UPDATE — skip the transition. Next scan tick
+            # will re-evaluate against the fresh last_event_at.
+            continue
         transitioned.append(sid)
         _emit(
             BusEvent(

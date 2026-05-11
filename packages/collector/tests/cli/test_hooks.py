@@ -242,6 +242,26 @@ def test_invalid_json_in_settings_rejected(settings_path: Path, script_path: Pat
         install_hooks(settings_path=settings_path, script_path=script_path)
 
 
+def test_corrupt_settings_still_gets_backed_up(
+    settings_path: Path, script_path: Path
+) -> None:
+    """Even when settings.json is broken JSON (the case where backup
+    matters MOST), the .bak.<timestamp> file must exist after the failed
+    install attempt so the user can recover."""
+    settings_path.write_text("not valid json {{{")
+    pre_files = {p.name for p in settings_path.parent.glob("*.bak.*")}
+
+    with pytest.raises(Exception, match=r"not valid JSON|valid JSON"):
+        install_hooks(settings_path=settings_path, script_path=script_path)
+
+    post_files = {p.name for p in settings_path.parent.glob("*.bak.*")}
+    new_backups = post_files - pre_files
+    assert len(new_backups) == 1, f"expected 1 new backup, got {new_backups}"
+    # The backup must contain the original (corrupt) content verbatim.
+    backup_name = next(iter(new_backups))
+    assert (settings_path.parent / backup_name).read_text() == "not valid json {{{"
+
+
 def test_non_object_settings_rejected(settings_path: Path, script_path: Path) -> None:
     settings_path.write_text("[1, 2, 3]")
     with pytest.raises(Exception, match="JSON object"):

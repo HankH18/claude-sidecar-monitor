@@ -16,6 +16,7 @@ with the wheel.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import shutil
 from dataclasses import dataclass
@@ -153,6 +154,15 @@ def install_hooks(
     settings_path = settings_path or Paths.from_env().settings_json
     script_path = script_path or hook_script_path()
 
+    # CRITICAL: back up BEFORE parsing. If settings.json is corrupt JSON the
+    # parse raises, and without a pre-parse backup the user loses their
+    # ability to recover — exactly the case where backup matters most.
+    # Skip backup for dry-run (no mutation downstream means no need) and
+    # when the file doesn't exist yet.
+    backup_path: Path | None = None
+    if not dry_run and settings_path.exists():
+        backup_path = _backup(settings_path)
+
     before = _load_settings(settings_path)
     after = json.loads(json.dumps(before))  # deep-copy via round-trip
 
@@ -189,6 +199,11 @@ def install_hooks(
     diff = _render_diff(before, after) if changed else ""
 
     if dry_run or not changed:
+        # No mutation → no backup needed. If we took one above (file existed),
+        # remove it so dry-run / no-op invocations don't litter the dir.
+        if backup_path is not None:
+            with contextlib.suppress(FileNotFoundError):
+                backup_path.unlink()
         return HookInstallResult(
             settings_path=settings_path,
             backup_path=None,
@@ -197,11 +212,9 @@ def install_hooks(
             diff=diff,
         )
 
-    # Materialize. Always back up first if the file exists.
-    backup_path: Path | None = None
-    if settings_path.exists():
-        backup_path = _backup(settings_path)
-    else:
+    # The pre-parse backup happened above. Just ensure the parent dir
+    # exists for fresh installs.
+    if not settings_path.exists():
         settings_path.parent.mkdir(parents=True, exist_ok=True)
 
     settings_path.write_text(json.dumps(after, indent=2, sort_keys=True) + "\n", encoding="utf-8")

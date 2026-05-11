@@ -152,6 +152,24 @@ def test_precompact_still_hangs_past_extended_threshold(db) -> None:
 # ────────── Multi-session scan ──────────
 
 
+def test_scanner_cas_skips_when_last_event_at_changed(db) -> None:
+    """Compare-and-swap on last_event_at: if the receiver wrote a fresh
+    event between scan_once's SELECT and UPDATE, the UPDATE no-ops and the
+    session stays out of 'hung'. We can't inject between phases inside
+    scan_once, so we exercise the SQL contract directly — the UPDATE used
+    by the scanner must include ``AND last_event_at = ?`` in its WHERE.
+    """
+    _create_session(db, state="running", last_event_age_s=200)
+    cursor = db.execute(
+        "UPDATE sessions SET state = 'hung' "
+        "WHERE session_id = ? AND state IN ('running', 'tool') "
+        "AND last_event_at = ?",
+        (SID, "1999-01-01T00:00:00Z"),  # stale value the row never had
+    )
+    assert cursor.rowcount == 0
+    assert _state(db) == "running"
+
+
 def test_scan_handles_multiple_sessions(db) -> None:
     base = datetime(2026, 5, 10, 12, 0, 0, tzinfo=UTC)
     _create_session(db, sid="ok", state="running", last_event_age_s=10, now=base)

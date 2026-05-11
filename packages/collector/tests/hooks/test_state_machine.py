@@ -213,6 +213,32 @@ def test_replay_full_session(db: object) -> None:
     assert events == 8  # SessionStart + 3*(Pre + Post) + Stop
 
 
+def test_apply_event_rolls_back_on_exception(db: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    """If anything inside apply_event raises after the BEGIN, the
+    transaction must roll back so the session row isn't half-written."""
+    # Establish a baseline session in a known state.
+    apply_event(db, "SessionStart", _payload())
+    apply_event(db, "PreToolUse", _payload(tool_name="Bash", tool_use_id="t1"))
+    baseline = _state(db)
+
+    # Force `resolve_parent` (called for SessionStart) to raise mid-event.
+    # SessionStart is the only event that calls resolve_parent, and it
+    # happens AFTER the sessions UPDATE — perfect canary.
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("simulated mid-event failure")
+
+    monkeypatch.setattr("csm.tree.resolve_parent", boom)
+
+    with pytest.raises(RuntimeError, match="simulated"):
+        apply_event(db, "SessionStart", _payload(source="resume"))
+
+    # Row state must be exactly what it was before the failed call —
+    # NOT the partial half-written state where the UPDATE landed.
+    after = _state(db)
+    assert after == baseline
+
+
 def test_known_events_set_matches_spec() -> None:
     """Sanity: spec.md §5 known events are in the validator set."""
     assert {

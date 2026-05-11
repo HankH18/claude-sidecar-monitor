@@ -154,15 +154,40 @@ def uninstall_command(
         "--purge",
         help="Also delete Keychain key + ~/Library/Application Support/claude-sidecar-monitor/.",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip the confirmation prompt (for scripted use).",
+    ),
 ) -> None:
     """Reverse of ``csm install`` — remove hooks + LaunchAgent.
 
     With ``--purge``, additionally wipe the Keychain entry and the
     application-support directory (DB, salt, etc.). Confirmed via prompt
     because that step is irreversible.
+
+    Even without ``--purge``, an unprompted uninstall is undesirable
+    (mid-shell typo on ``csm install`` lands on uninstall mid-command
+    completion) so we gate the plain path behind a confirmation too.
+    Pass ``--yes`` to skip — useful in test fixtures and scripts.
     """
     typer.echo("csm uninstall")
     typer.echo("=============")
+
+    if not yes:
+        msg = (
+            "This will remove csm hooks from ~/.claude/settings.json and "
+            "unload the LaunchAgent. Continue?"
+        )
+        if purge:
+            msg = (
+                "This will remove csm hooks, unload the LaunchAgent, "
+                "AND with --purge wipe the encrypted DB + Keychain entry. Continue?"
+            )
+        if not typer.confirm(msg, default=False):
+            typer.echo("Aborted.")
+            raise typer.Exit(code=0)
 
     # Hooks — uninstall preserves any non-csm entries.
     result = install_hooks(uninstall=True)
@@ -181,14 +206,18 @@ def uninstall_command(
         typer.echo("Done. (Use --purge to also wipe Keychain key + DB.)")
         return
 
-    # Purge confirmation
-    confirm = typer.confirm(
-        "PURGE will delete the encrypted DB, salt, and Keychain key. Continue?",
-        default=False,
-    )
-    if not confirm:
-        typer.echo("Aborted purge.")
-        return
+    # Purge — second confirmation since this step is irreversible.
+    # Bypass when --yes is set (the top-of-function confirm already
+    # acknowledged the purge intent in that case).
+    if not yes:
+        confirm = typer.confirm(
+            "PURGE will delete the encrypted DB, salt, and Keychain key. "
+            "This is irreversible. Continue?",
+            default=False,
+        )
+        if not confirm:
+            typer.echo("Aborted purge.")
+            return
 
     crypto.delete_key_from_keychain()
     typer.echo("Keychain entry: removed.")
