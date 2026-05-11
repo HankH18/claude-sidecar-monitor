@@ -80,6 +80,8 @@ Defined in `.claude/agents/`:
 - `test-runner` (Sonnet) — call instead of running tests inline; saves context.
 - `debugger` (Opus) — call when a test fails or behavior is unexpected. Root-cause analysis, not pattern-matching.
 
+**Run agents in parallel whenever the work is independent.** Multiple Agent tool calls in a single response execute concurrently. Sequence only when one agent's output is a required input to the next.
+
 ## Slash commands
 
 - `/plan <request>` — invoke planner sub-agent

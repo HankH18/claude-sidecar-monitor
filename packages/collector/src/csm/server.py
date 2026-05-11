@@ -15,14 +15,20 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from csm import __version__
 from csm.api import router as api_router
 from csm.config import Paths
 from csm.db import connect
 from csm.hooks import router as hooks_router
+
+# Paths under these prefixes must never fall through to the SPA — they're
+# owned by other routers, and a fall-through would mask a real 404 as the
+# dashboard shell.
+_API_PREFIXES = ("api/", "hook/", "stream", "healthz")
+_TOKEN_PLACEHOLDER = "__CSM_TOKEN__"
 
 
 @asynccontextmanager
@@ -87,6 +93,43 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.db.close()
 
 
+def _resolve_static_dir() -> Path | None:
+    bundled = Path(__file__).resolve().parent / "_static"
+    if bundled.exists():
+        return bundled
+    monorepo_dist = (
+        Path(__file__).resolve().parent.parent.parent.parent / "dashboard" / "dist"
+    )
+    return monorepo_dist if monorepo_dist.exists() else None
+
+
+def _read_api_secret(app: FastAPI) -> str:
+    # No caching — settings can change at runtime (regenerate-secret in
+    # the dashboard). The cost is one indexed lookup per index.html serve;
+    # asset fetches don't hit this path.
+    db = getattr(app.state, "db", None)
+    if db is None:
+        return ""
+    row = db.execute(
+        "SELECT value FROM settings WHERE key = 'api_secret'"
+    ).fetchone()
+    return str(row[0]) if row and row[0] else ""
+
+
+def _render_index(app: FastAPI) -> HTMLResponse:
+    template: str | None = getattr(app.state, "index_template", None)
+    if template is None:
+        raise HTTPException(status_code=404, detail="dashboard bundle not built")
+    secret = _read_api_secret(app)
+    html = template.replace(_TOKEN_PLACEHOLDER, secret)
+    # Cache-Control: index.html is the SPA shell — never cache, since it
+    # carries the api_secret and updates when the bundle ships.
+    return HTMLResponse(
+        content=html,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="claude-sidecar-monitor",
@@ -104,15 +147,40 @@ def create_app() -> FastAPI:
     app.include_router(hooks_router)
     app.include_router(api_router)
 
-    # Static dashboard mount — only if the bundle has been built. In dev,
-    # `bun run dev` serves the dashboard separately on :5173.
-    static_dir = (
-        Path(__file__).resolve().parent / "_static"
-        if (Path(__file__).resolve().parent / "_static").exists()
-        else Path(__file__).resolve().parent.parent.parent.parent / "dashboard" / "dist"
-    )
-    if static_dir.exists():
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="dashboard")
+    # Static dashboard — only if the bundle has been built. In dev,
+    # `bun run dev` serves the dashboard separately on :5173 and this
+    # block is a no-op.
+    static_dir = _resolve_static_dir()
+    if static_dir is not None:
+        index_path = static_dir / "index.html"
+        app.state.index_template = (
+            index_path.read_text(encoding="utf-8") if index_path.exists() else None
+        )
+
+        @app.get("/", include_in_schema=False)
+        async def index(request: Request) -> HTMLResponse:
+            return _render_index(request.app)
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def spa(full_path: str, request: Request) -> Response:
+            # Defensive: never shadow API/hook/stream/health 404s with
+            # the SPA shell. FastAPI's route table already matches
+            # explicit routes first, but a typo on /api/foo would
+            # otherwise return index.html.
+            if full_path.startswith(_API_PREFIXES):
+                raise HTTPException(status_code=404)
+
+            # Block directory traversal: any attempt to escape static_dir
+            # is treated as a missing asset, never a 200 + sensitive file.
+            candidate = (static_dir / full_path).resolve()
+            try:
+                candidate.relative_to(static_dir.resolve())
+            except ValueError:
+                raise HTTPException(status_code=404) from None
+
+            if candidate.is_file():
+                return FileResponse(candidate)
+            return _render_index(request.app)
 
     return app
 
