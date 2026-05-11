@@ -164,15 +164,26 @@ async def get_tokens(
 # ────────────────────── /api/settings ──────────────────────
 
 
-@router.get("/api/settings", response_model=Settings)
-async def get_settings(request: Request) -> Settings:
-    db = _db(request)
-    raw = await asyncio.to_thread(get_settings_dict, db)
+def _settings_from_raw(raw: dict[str, str]) -> Settings:
+    """Construct a Settings response from the raw key-value dict."""
     return Settings(
         hang_yellow_ms=int(raw.get("hang_yellow_ms", "60000")),
         hang_red_ms=int(raw.get("hang_red_ms", "180000")),
         ntfy_topic=raw.get("ntfy_topic", ""),
+        # V2.D4 — phone permission approval. Empty string for `approval_enabled`
+        # means "never set"; treat as False.
+        approval_enabled=raw.get("approval_enabled", "0") == "1",
+        approval_tools=raw.get("approval_tools", ""),
+        approval_timeout_ms=int(raw.get("approval_timeout_ms", "60000")),
+        dashboard_url=raw.get("dashboard_url", ""),
     )
+
+
+@router.get("/api/settings", response_model=Settings)
+async def get_settings(request: Request) -> Settings:
+    db = _db(request)
+    raw = await asyncio.to_thread(get_settings_dict, db)
+    return _settings_from_raw(raw)
 
 
 @router.patch("/api/settings", response_model=Settings)
@@ -180,32 +191,31 @@ async def patch_settings(patch: SettingsPatch, request: Request) -> Settings:
     db = _db(request)
 
     def _apply() -> dict[str, str]:
-        if patch.hang_yellow_ms is not None:
+        # Map of (patch attribute, settings.key, serialiser). The serialiser
+        # turns the typed patch value into the string we persist.
+        updates: list[tuple[Any, str, Any]] = [
+            (patch.hang_yellow_ms, "hang_yellow_ms", lambda v: str(v)),
+            (patch.hang_red_ms, "hang_red_ms", lambda v: str(v)),
+            (patch.ntfy_topic, "ntfy_topic", lambda v: v),
+            # V2.D4 — extended keys. approval_enabled bools serialise to
+            # '0' / '1' to match the migration's initial inserts.
+            (patch.approval_enabled, "approval_enabled", lambda v: "1" if v else "0"),
+            (patch.approval_tools, "approval_tools", lambda v: v),
+            (patch.approval_timeout_ms, "approval_timeout_ms", lambda v: str(v)),
+            (patch.dashboard_url, "dashboard_url", lambda v: v),
+        ]
+        for value, key, serialise in updates:
+            if value is None:
+                continue
             db.execute(
                 "INSERT INTO settings(key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')",
-                ("hang_yellow_ms", str(patch.hang_yellow_ms)),
-            )
-        if patch.hang_red_ms is not None:
-            db.execute(
-                "INSERT INTO settings(key, value) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')",
-                ("hang_red_ms", str(patch.hang_red_ms)),
-            )
-        if patch.ntfy_topic is not None:
-            db.execute(
-                "INSERT INTO settings(key, value) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')",
-                ("ntfy_topic", patch.ntfy_topic),
+                (key, serialise(value)),
             )
         return get_settings_dict(db)
 
     raw = await asyncio.to_thread(_apply)
-    response = Settings(
-        hang_yellow_ms=int(raw.get("hang_yellow_ms", "60000")),
-        hang_red_ms=int(raw.get("hang_red_ms", "180000")),
-        ntfy_topic=raw.get("ntfy_topic", ""),
-    )
+    response = _settings_from_raw(raw)
     # Notify SSE subscribers so the dashboard's useSettings hook can pick up
     # the new thresholds without a manual reload. Per docs/spec.md §7 SSE
     # event kinds.

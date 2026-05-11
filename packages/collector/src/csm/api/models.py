@@ -143,12 +143,25 @@ class Settings(BaseModel):
     hang_yellow_ms: int
     hang_red_ms: int
     ntfy_topic: str
+    # V2.D4 — phone permission approval. Defaults match the migration's
+    # initial inserts in `db/migrations/002_v2.sql` so a freshly migrated
+    # install round-trips cleanly through GET /api/settings.
+    approval_enabled: bool = False
+    approval_tools: str = ""
+    approval_timeout_ms: int = 60000
+    dashboard_url: str = ""
 
 
 class SettingsPatch(BaseModel):
     hang_yellow_ms: int | None = None
     hang_red_ms: int | None = None
     ntfy_topic: str | None = None
+    # V2.D4 — extended patchable keys. All optional so the dashboard only
+    # sends the subset the user actually changed.
+    approval_enabled: bool | None = None
+    approval_tools: str | None = None
+    approval_timeout_ms: int | None = None
+    dashboard_url: str | None = None
 
 
 class ApiError(BaseModel):

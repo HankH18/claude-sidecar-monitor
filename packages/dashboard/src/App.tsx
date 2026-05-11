@@ -1,11 +1,14 @@
 import { Link, NavLink, Route, Routes } from "react-router";
 import ConnectionBanner from "./components/ConnectionBanner";
 import ConnectionStatus from "./components/ConnectionStatus";
+import PendingApprovalsBanner from "./components/PendingApprovalsBanner";
 import { ToastProvider } from "./components/Toast";
 import Overview from "./pages/Overview";
+import PermissionDeepLink from "./pages/PermissionDeepLink";
 import ProjectDetail from "./pages/ProjectDetail";
 import SessionDetail from "./pages/SessionDetail";
 import Settings from "./pages/Settings";
+import SubagentDetail from "./pages/SubagentDetail";
 import Tokens from "./pages/Tokens";
 
 /**
@@ -56,11 +59,14 @@ export default function App() {
           </nav>
         </header>
         <ConnectionBanner />
+        <PendingApprovalsBanner />
         <main className="flex-1 px-4 py-5 pb-safe">
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/projects/:encoded" element={<ProjectDetail />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />
+            <Route path="/subagents/:virtualId" element={<SubagentDetail />} />
+            <Route path="/permissions/:id" element={<PermissionDeepLink />} />
             <Route path="/tokens" element={<Tokens />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />

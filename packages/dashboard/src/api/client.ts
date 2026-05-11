@@ -1,3 +1,4 @@
+import { getApiToken } from "./token";
 import type { ApiError } from "./types";
 
 export class ApiCallError extends Error {
@@ -16,24 +17,44 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
   let code = "http_error";
   let message = `${res.status} ${res.statusText}`;
   try {
-    const body = (await res.json()) as ApiError;
-    code = body.error?.code ?? code;
-    message = body.error?.message ?? message;
+    const body = (await res.json()) as ApiError & { detail?: ApiError };
+    // FastAPI wraps HTTPException payloads in `detail`; unwrap for both shapes.
+    const wrapped = body.detail?.error ?? body.error;
+    code = wrapped?.code ?? code;
+    message = wrapped?.message ?? message;
   } catch {
     /* body wasn't JSON */
   }
   throw new ApiCallError(res.status, code, message);
 }
 
+/**
+ * Attach Authorization: Bearer to *every* request — GET included.
+ *
+ * The token lives on the same page as the dashboard JS (server-rendered
+ * meta tag), so adding it to every request is harmless and removes the
+ * "which calls are auth-gated?" mental overhead. The collector ignores
+ * the header on unauthed routes.
+ */
+function withAuthHeaders(init?: HeadersInit): HeadersInit {
+  const token = getApiToken();
+  const base: Record<string, string> = {
+    Accept: "application/json",
+    ...(init as Record<string, string> | undefined),
+  };
+  if (token) base.Authorization = `Bearer ${token}`;
+  return base;
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(path, { headers: { Accept: "application/json" } });
+  const res = await fetch(path, { headers: withAuthHeaders() });
   return jsonOrThrow<T>(res);
 }
 
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: withAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
   });
   return jsonOrThrow<T>(res);
@@ -42,7 +63,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: withAuthHeaders({ "Content-Type": "application/json" }),
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   return jsonOrThrow<T>(res);

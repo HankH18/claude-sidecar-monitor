@@ -178,6 +178,8 @@ export default function Settings() {
         </div>
       </form>
 
+      <ApprovalForm form={form} setForm={setForm} />
+
       <section className="space-y-3 border-t border-zinc-800 pt-5">
         <h2 className="text-xs uppercase tracking-wide text-zinc-500">Actions</h2>
 
@@ -346,6 +348,115 @@ function PurgeForm({ mock }: { mock: boolean }) {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * V2.D4 — phone permission approval settings.
+ *
+ * The fields live on the same `form` state as the rest of Settings so the
+ * top-level Save button can PATCH everything in one shot.
+ *
+ * The "Regenerate api_secret" button is a placeholder until the collector
+ * exposes a dedicated POST endpoint. Today the secret is generated once
+ * during `csm install`; rotation requires a CLI command.
+ */
+function ApprovalForm({
+  form,
+  setForm,
+}: {
+  form: SettingsT;
+  setForm: (s: SettingsT) => void;
+}) {
+  return (
+    <section
+      className="space-y-4 border-t border-zinc-800 pt-5"
+      aria-label="phone permission approval"
+    >
+      <h2 className="text-xs uppercase tracking-wide text-zinc-500">Phone permission approval</h2>
+
+      <Field
+        id="approval_enabled"
+        label="Enable phone approval"
+        hint="When on, configured tool calls require an approval decision from this dashboard."
+      >
+        <label className="inline-flex items-center gap-2 cursor-pointer min-h-11">
+          <input
+            id="approval_enabled"
+            type="checkbox"
+            className="h-4 w-4 accent-emerald-500"
+            checked={!!form.approval_enabled}
+            onChange={(e) => setForm({ ...form, approval_enabled: e.target.checked })}
+          />
+          <span className="text-sm text-zinc-200">
+            {form.approval_enabled ? "Enabled" : "Disabled"}
+          </span>
+        </label>
+      </Field>
+
+      <Field
+        id="approval_tools"
+        label="Tools requiring approval"
+        hint="Comma-separated list of tool names. Empty = approve everything when enabled."
+      >
+        <input
+          id="approval_tools"
+          name="approval_tools"
+          type="text"
+          autoComplete="off"
+          placeholder="Bash, Edit, Write"
+          className={INPUT}
+          value={form.approval_tools ?? ""}
+          onChange={(e) => setForm({ ...form, approval_tools: e.target.value })}
+        />
+      </Field>
+
+      <Field
+        id="approval_timeout_ms"
+        label="Approval timeout (ms)"
+        hint="If no decision arrives within this window the request times out and the hook falls back to its default."
+      >
+        <input
+          id="approval_timeout_ms"
+          name="approval_timeout_ms"
+          type="number"
+          min={1000}
+          max={600_000}
+          step={1000}
+          className={INPUT}
+          value={form.approval_timeout_ms ?? 60_000}
+          onChange={(e) => setForm({ ...form, approval_timeout_ms: Number(e.target.value) || 0 })}
+        />
+      </Field>
+
+      <Field
+        id="dashboard_url"
+        label="Dashboard URL for deep-links"
+        hint="Used in ntfy push notifications so tapping opens this dashboard. e.g. https://csm.tail-scale.ts.net"
+      >
+        <input
+          id="dashboard_url"
+          name="dashboard_url"
+          type="url"
+          autoComplete="off"
+          placeholder="https://csm.tail-scale.ts.net"
+          className={INPUT}
+          value={form.dashboard_url ?? ""}
+          onChange={(e) => setForm({ ...form, dashboard_url: e.target.value })}
+        />
+      </Field>
+
+      <div className="space-y-1.5">
+        <p className="block text-xs font-medium text-zinc-300">Regenerate api_secret</p>
+        <p className="text-[11px] text-zinc-500">
+          Rotates the install's API secret. Disabled until the collector exposes an endpoint — for
+          now run <code className="text-zinc-300">csm install</code> to regenerate.
+        </p>
+        <button type="button" disabled className={`${BTN_DANGER} disabled:cursor-not-allowed`}>
+          Regenerate api_secret (coming soon)
+        </button>
+      </div>
+    </section>
   );
 }
 

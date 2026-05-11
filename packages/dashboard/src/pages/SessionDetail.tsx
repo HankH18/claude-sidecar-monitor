@@ -10,10 +10,13 @@ import {
 } from "../api/mock";
 import { useMock } from "../api/mode";
 import type { Session, SessionDetail as SessionDetailT } from "../api/types";
+import ActivityLine from "../components/ActivityLine";
+import AgentKindIcon from "../components/AgentKindIcon";
 import Breadcrumbs from "../components/Breadcrumbs";
 import DiffViewer from "../components/DiffViewer";
 import ElapsedClock from "../components/ElapsedClock";
 import EmptyState from "../components/EmptyState";
+import SessionLabel from "../components/SessionLabel";
 import StatePill from "../components/StatePill";
 import TokenBadge from "../components/TokenBadge";
 
@@ -340,17 +343,39 @@ export default function SessionDetail() {
         items={[
           { label: "Live", to: "/" },
           { label: projectLabel, to: projectHref },
-          { label: session.agent_type ?? "session" },
+          {
+            label: session.title ?? session.nickname ?? session.agent_type ?? "session",
+            display: (
+              <span className="inline-flex items-center gap-1.5 min-w-0">
+                <AgentKindIcon
+                  kind={session.agent_kind ?? null}
+                  confidence={session.agent_kind_confidence ?? null}
+                  className="text-[11px]"
+                />
+                <SessionLabel session={session} className="truncate" />
+              </span>
+            ),
+          },
         ]}
       />
 
       <header className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <h1 className="text-base font-semibold text-zinc-100 truncate">
-              {session.agent_type ?? "session"}
+          <div className="min-w-0 flex-1">
+            <h1 className="text-base font-semibold text-zinc-100 truncate inline-flex items-center gap-1.5">
+              <AgentKindIcon
+                kind={session.agent_kind ?? null}
+                confidence={session.agent_kind_confidence ?? null}
+                className="shrink-0"
+              />
+              <SessionLabel session={session} className="truncate" />
             </h1>
-            <p className="text-[11px] text-zinc-500 truncate">
+            <ActivityLine
+              summary={session.activity_summary ?? null}
+              updatedAt={session.activity_updated_at ?? null}
+              className="mt-0.5"
+            />
+            <p className="text-[11px] text-zinc-500 truncate mt-0.5">
               {session.project_label ?? session.worktree_root}
             </p>
           </div>

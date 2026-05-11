@@ -238,6 +238,40 @@ def test_patch_settings_partial(client: TestClient) -> None:
     assert r.json()["hang_red_ms"] == 180000  # unchanged
 
 
+def test_patch_settings_extended_approval_keys(client: TestClient) -> None:
+    """V2.D4 — PATCH /api/settings round-trips the new approval keys
+    (approval_enabled / approval_tools / approval_timeout_ms /
+    dashboard_url) and serialises booleans as '0'/'1' so the dashboard
+    sees a real bool on the way back."""
+    r = client.patch(
+        "/api/settings",
+        json={
+            "approval_enabled": True,
+            "approval_tools": "Bash, Edit, Write",
+            "approval_timeout_ms": 45_000,
+            "dashboard_url": "https://csm.tail-scale.ts.net",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["approval_enabled"] is True
+    assert body["approval_tools"] == "Bash, Edit, Write"
+    assert body["approval_timeout_ms"] == 45_000
+    assert body["dashboard_url"] == "https://csm.tail-scale.ts.net"
+
+    # Re-read to confirm persistence; existing v1 keys must remain stable.
+    g = client.get("/api/settings")
+    body2 = g.json()
+    assert body2["approval_enabled"] is True
+    assert body2["dashboard_url"] == "https://csm.tail-scale.ts.net"
+    assert body2["hang_yellow_ms"] == 60000  # unchanged from default
+
+    # Flip approval_enabled off and confirm bool serialisation round-trips.
+    r2 = client.patch("/api/settings", json={"approval_enabled": False})
+    assert r2.status_code == 200
+    assert r2.json()["approval_enabled"] is False
+
+
 @pytest.mark.asyncio
 async def test_patch_settings_emits_settings_changed_event(app: FastAPI) -> None:
     """PATCH /api/settings must publish a `settings_changed` BusEvent so the

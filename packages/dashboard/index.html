@@ -7,6 +7,14 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Sidecar" />
+    <!--
+      V2.D4 — per-install API secret for the permission-decision endpoints.
+      TODO(collector): replace __CSM_TOKEN__ at request time so the dashboard
+      can attach `Authorization: Bearer <secret>` to writes. Until that lands
+      the static bundle ships with the literal placeholder, which the token
+      helper treats as "no token" (auth-gated calls return 401/503).
+    -->
+    <meta name="csm-token" content="__CSM_TOKEN__" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png" />
     <title>Sidecar — claude-sidecar-monitor</title>

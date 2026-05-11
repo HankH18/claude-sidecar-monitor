@@ -6,7 +6,7 @@ import Breadcrumbs from "../components/Breadcrumbs";
 import EmptyState from "../components/EmptyState";
 import { ProjectSummarySkeleton, TreeSkeleton } from "../components/Skeleton";
 import { formatTokens } from "../components/TokenBadge";
-import TreeRow, { toRowData, type TreeRowData } from "../components/TreeNode";
+import TreeRow, { TREE_ROW_HEIGHT, toRowData, type TreeRowData } from "../components/TreeNode";
 import { useSessions } from "../hooks/useSessions";
 import { useTree } from "../hooks/useTree";
 
@@ -174,10 +174,10 @@ export default function ProjectDetail() {
             ref={treeRef}
             openByDefault
             initialOpenState={initialOpenState}
-            rowHeight={44}
+            rowHeight={TREE_ROW_HEIGHT}
             indent={16}
             width="100%"
-            height={Math.min(440, 44 * countNodes(rows) + 8)}
+            height={Math.min(640, TREE_ROW_HEIGHT * countNodes(rows) + 8)}
             disableDrag
             disableDrop
             disableEdit
@@ -185,6 +185,11 @@ export default function ProjectDetail() {
             onActivate={(node) => {
               const id = node.data.id;
               if (id.startsWith("__project__") || id.startsWith("__empty__")) return;
+              // V2.C3 — virtual subagent rows route to /subagents/:virtualId.
+              if (node.data.node.is_virtual) {
+                navigate(`/subagents/${encodeURIComponent(id)}`);
+                return;
+              }
               navigate(`/sessions/${id}`);
             }}
           >
