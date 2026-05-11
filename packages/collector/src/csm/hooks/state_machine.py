@@ -234,6 +234,14 @@ def apply_event(
     _emit(snapshot, event_name, received_at)
     if virtual_emit is not None:
         _emit_virtual(virtual_emit)
+
+    # V2.B — recompute the session's activity digest. We do this outside
+    # the state-machine transaction (autocommit connection) so the
+    # digest write doesn't extend the receiver's write lock; the digest
+    # is derived data and a missed update is at worst a one-event stale
+    # SSE message (the next event will catch it).
+    _maybe_emit_digest(conn, str(session_id))
+
     return snapshot
 
 
@@ -335,6 +343,45 @@ def _emit_virtual(payload: dict[str, Any]) -> None:
         data=payload,
     )
     asyncio.run_coroutine_threadsafe(bus.publish(event), loop)
+
+
+def _maybe_emit_digest(conn: Any, session_id: str) -> None:
+    """V2.B — recompute and publish session_digest_update when the
+    derived activity summary actually changes.
+
+    Best-effort: any failure is swallowed so a digest hiccup never
+    breaks the receiver. The next event for this session re-derives.
+    """
+    try:
+        from csm.digest import apply_digest_update
+
+        summary, generated_at, changed = apply_digest_update(conn, session_id)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "digest recompute failed for session %s", session_id
+        )
+        return
+    if not changed:
+        return
+
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    bus_event = BusEvent(
+        kind="session_digest_update",
+        session_id=session_id,
+        data={
+            "session_id": session_id,
+            "activity_summary": summary,
+            "activity_updated_at": generated_at,
+        },
+    )
+    asyncio.run_coroutine_threadsafe(bus.publish(bus_event), loop)
 
 
 # ────────────────────────── helpers ──────────────────────────

@@ -17,6 +17,7 @@ from csm.api.models import (
     TranscriptMessage,
     TreeNode,
 )
+from csm.digest import apply_digest_update
 from csm.tokens import get_daily_totals, get_subtree_tokens
 from csm.tree import build_project_tree
 
@@ -67,7 +68,26 @@ def list_sessions(conn: Any, *, limit: int = 200) -> list[Session]:
         f"SELECT {_SESSION_COLS} FROM sessions ORDER BY last_event_at DESC LIMIT ?",
         (limit,),
     ).fetchall()
-    return [_row_to_session(r) for r in rows]
+    sessions = [_row_to_session(r) for r in rows]
+    # V2.B — lazily refresh activity digests for any sessions whose
+    # column is stale or empty. apply_digest_update no-ops when the
+    # value is unchanged, so this stays cheap on a hot list endpoint.
+    for s in sessions:
+        try:
+            summary, generated_at, changed = apply_digest_update(conn, s.session_id)
+        except Exception:
+            # Digest is best-effort — never let it 500 the API.
+            continue
+        if changed:
+            s.activity_summary = summary
+            s.activity_updated_at = generated_at
+        elif summary is not None and s.activity_summary != summary:
+            # Shouldn't happen — apply_digest_update only returns
+            # changed=False when the values actually agree — but if a
+            # caller threw between SELECT and UPDATE we'd see this. Keep
+            # the response coherent.
+            s.activity_summary = summary
+    return sessions
 
 
 def get_session(conn: Any, session_id: str) -> Session | None:
@@ -75,7 +95,17 @@ def get_session(conn: Any, session_id: str) -> Session | None:
         f"SELECT {_SESSION_COLS} FROM sessions WHERE session_id = ?",
         (session_id,),
     ).fetchone()
-    return _row_to_session(row) if row else None
+    if row is None:
+        return None
+    session = _row_to_session(row)
+    try:
+        summary, generated_at, changed = apply_digest_update(conn, session_id)
+    except Exception:
+        return session
+    if changed:
+        session.activity_summary = summary
+        session.activity_updated_at = generated_at
+    return session
 
 
 def get_settings_dict(conn: Any) -> dict[str, str]:
