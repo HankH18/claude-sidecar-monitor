@@ -13,12 +13,13 @@ import type { Session, SessionDetail as SessionDetailT } from "../api/types";
 import ActivityLine from "../components/ActivityLine";
 import AgentKindIcon from "../components/AgentKindIcon";
 import Breadcrumbs from "../components/Breadcrumbs";
-import DiffViewer from "../components/DiffViewer";
 import ElapsedClock from "../components/ElapsedClock";
 import EmptyState from "../components/EmptyState";
 import SessionLabel from "../components/SessionLabel";
+import SessionStatsLine from "../components/SessionStatsLine";
 import StatePill from "../components/StatePill";
 import TokenBadge from "../components/TokenBadge";
+import TranscriptViewer, { type TranscriptViewerMessage } from "../components/TranscriptViewer";
 import Window from "../components/Window";
 
 interface RawTranscriptMessage {
@@ -28,6 +29,10 @@ interface RawTranscriptMessage {
   timestamp: string;
   content_json: string;
   model?: string | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
 }
 
 interface TranscriptPage {
@@ -35,82 +40,58 @@ interface TranscriptPage {
   next_cursor: number | null;
 }
 
-/** Server transcript rows store JSON-stringified content; flatten to a string. */
-function flattenContent(contentJson: string): {
-  content: string;
-  toolName?: string;
-  isDiff?: boolean;
-} {
-  try {
-    const parsed = JSON.parse(contentJson) as unknown;
-    if (typeof parsed === "string") return { content: parsed };
-    if (Array.isArray(parsed)) {
-      // Anthropic content blocks: [{type:"text",text:...}, {type:"tool_use",name,input}, ...]
-      const parts: string[] = [];
-      let toolName: string | undefined;
-      let isDiff = false;
-      for (const block of parsed as Array<Record<string, unknown>>) {
-        const type = block.type;
-        if (type === "text" && typeof block.text === "string") {
-          parts.push(block.text);
-        } else if (type === "tool_use") {
-          toolName = (block.name as string) || toolName;
-          if (toolName === "Edit" || toolName === "Write") isDiff = true;
-          parts.push(`${toolName ?? "tool"}: ${JSON.stringify(block.input ?? {})}`);
-        } else if (type === "tool_result") {
-          const c = block.content;
-          if (typeof c === "string") parts.push(c);
-          else parts.push(JSON.stringify(c));
-        } else if (typeof block.text === "string") {
-          parts.push(block.text);
-        }
-      }
-      return { content: parts.join("\n"), toolName, isDiff };
-    }
-    return { content: JSON.stringify(parsed) };
-  } catch {
-    return { content: contentJson };
-  }
-}
-
-function toUiMessage(raw: RawTranscriptMessage): TranscriptMessage {
-  const role = (
-    raw.role === "user" || raw.role === "assistant" || raw.role === "system"
-      ? raw.role
-      : "tool_result"
-  ) as TranscriptMessage["role"];
-  const flat = flattenContent(raw.content_json);
+/** Live-mode rows already carry `content_json`; pass through unchanged. */
+function toViewerMessage(raw: RawTranscriptMessage): TranscriptViewerMessage {
   return {
     message_id: raw.message_id,
-    role,
+    role: raw.role,
     timestamp: raw.timestamp,
-    content: flat.content,
-    model: raw.model ?? undefined,
-    tool_name: flat.toolName,
-    is_diff: flat.isDiff,
+    content_json: raw.content_json,
+    model: raw.model ?? null,
+    input_tokens: raw.input_tokens ?? null,
+    output_tokens: raw.output_tokens ?? null,
+    cache_read_input_tokens: raw.cache_read_input_tokens ?? null,
+    cache_creation_input_tokens: raw.cache_creation_input_tokens ?? null,
   };
 }
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={async () => {
-        try {
-          await navigator.clipboard?.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        } catch {
-          // Clipboard may not be available (test env). Silently fail.
-        }
-      }}
-      className="inline-flex items-center justify-center min-h-9 min-w-11 px-2 text-[11px] text-ink-muted hover:text-ink rounded border border-line hover:bg-surface-2"
-      aria-label={copied ? "copied" : "copy message"}
-    >
-      {copied ? "copied" : "copy"}
-    </button>
-  );
+/**
+ * Mock fixtures store a flat `content: string` + an optional `tool_name`.
+ * Reconstruct a synthetic JSONL-ish row so TranscriptViewer can render
+ * them the same way as live data.
+ */
+function mockToViewerMessage(m: TranscriptMessage): TranscriptViewerMessage {
+  // If the row has a tool_name + diff hint, treat the content as an Edit
+  // tool_use stub; otherwise wrap it as a plain text block under the role.
+  const blocks: Array<Record<string, unknown>> = [];
+  if (m.role === "assistant" && m.tool_name) {
+    // Synthesize a tool_use with a `command` (Bash) / `file_path` (Edit / Write)
+    // / generic `text` field so summarizeToolInput has something to chew on.
+    const input: Record<string, unknown> = {};
+    if (m.tool_name === "Bash") input.command = m.content;
+    else if (m.tool_name === "Edit" || m.tool_name === "Write") input.file_path = m.content;
+    else input.text = m.content;
+    blocks.push({ type: "tool_use", id: `mock-${m.message_id}`, name: m.tool_name, input });
+  } else if (m.role === "tool_result") {
+    blocks.push({ type: "tool_result", content: m.content });
+  } else {
+    blocks.push({ type: "text", text: m.content });
+  }
+  const wrapped = {
+    type: m.role,
+    message: {
+      role: m.role,
+      model: m.model,
+      content: blocks,
+    },
+  };
+  return {
+    message_id: m.message_id,
+    role: m.role,
+    timestamp: m.timestamp,
+    content_json: JSON.stringify(wrapped),
+    model: m.model ?? null,
+  };
 }
 
 function TimelineStrip({ entries }: { entries: TimelineEntry[] }) {
@@ -146,43 +127,6 @@ function TimelineStrip({ entries }: { entries: TimelineEntry[] }) {
         })}
       </ol>
     </div>
-  );
-}
-
-function MessageBlock({ m }: { m: TranscriptMessage }) {
-  const roleColor = {
-    user: "border-teal/40 bg-teal-soft/40",
-    assistant: "border-line bg-surface",
-    tool_result: "border-info/30 bg-info/5",
-    system: "border-warn/30 bg-warn/5",
-  }[m.role];
-
-  const isToolIO = m.role === "tool_result" || (m.role === "assistant" && m.tool_name);
-  const isReadResult = m.tool_name === "Read";
-
-  return (
-    <article
-      className={`rounded-md border ${roleColor} p-3 space-y-2`}
-      data-role={m.role}
-      data-testid="transcript-message"
-    >
-      <header className="flex items-center justify-between text-[10px] uppercase tracking-wide text-ink-muted">
-        <span>
-          {m.role}
-          {m.tool_name ? ` · ${m.tool_name}` : ""}
-          {m.model ? ` · ${m.model}` : ""}
-        </span>
-        <div className="flex items-center gap-1">
-          <span>{new Date(m.timestamp).toLocaleTimeString()}</span>
-          <CopyButton text={m.content} />
-        </div>
-      </header>
-      {isToolIO ? (
-        <DiffViewer toolName={m.tool_name} content={m.content} collapsed={isReadResult} />
-      ) : (
-        <p className="text-sm text-ink whitespace-pre-wrap">{m.content}</p>
-      )}
-    </article>
   );
 }
 
@@ -233,9 +177,9 @@ export default function SessionDetail() {
     return mockSessions.find((s) => s.session_id === id) ?? null;
   }, [id, mock]);
 
-  const mockTranscriptMsgs = useMemo<TranscriptMessage[]>(() => {
+  const mockMessages = useMemo<TranscriptViewerMessage[]>(() => {
     if (!id || !mock) return [];
-    return mockTranscript(id);
+    return mockTranscript(id).map(mockToViewerMessage);
   }, [id, mock]);
 
   const mockTimelineEntries = useMemo<TimelineEntry[]>(() => {
@@ -245,7 +189,7 @@ export default function SessionDetail() {
 
   // Live-mode state.
   const [liveSession, setLiveSession] = useState<Session | null>(null);
-  const [liveTranscript, setLiveTranscript] = useState<TranscriptMessage[]>([]);
+  const [liveMessages, setLiveMessages] = useState<TranscriptViewerMessage[]>([]);
   const [liveLoading, setLiveLoading] = useState(true);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [liveNotFound, setLiveNotFound] = useState(false);
@@ -257,7 +201,7 @@ export default function SessionDetail() {
     setLiveError(null);
     setLiveNotFound(false);
     setLiveSession(null);
-    setLiveTranscript([]);
+    setLiveMessages([]);
 
     (async () => {
       try {
@@ -273,7 +217,7 @@ export default function SessionDetail() {
         ]);
         if (cancelled) return;
         setLiveSession(session);
-        setLiveTranscript(page.messages.map(toUiMessage));
+        setLiveMessages(page.messages.map(toViewerMessage));
         setLiveLoading(false);
       } catch (err) {
         if (cancelled) return;
@@ -300,7 +244,7 @@ export default function SessionDetail() {
   }
 
   const session = mock ? mockSession : liveSession;
-  const transcript = mock ? mockTranscriptMsgs : liveTranscript;
+  const messages = mock ? mockMessages : liveMessages;
   const timeline = mock ? mockTimelineEntries : [];
 
   const notFound = mock ? !session : liveNotFound;
@@ -382,6 +326,14 @@ export default function SessionDetail() {
           <p className="text-[11px] text-ink-muted truncate">
             {session.project_label ?? session.worktree_root}
           </p>
+          <SessionStatsLine
+            startedAt={session.started_at}
+            lastEventAt={session.last_event_at}
+            completedAt={session.completed_at}
+            live={live}
+            totalTokens={session.input_tokens + session.output_tokens}
+            tokensLastHour={session.tokens_last_hour ?? null}
+          />
           <div className="flex items-center justify-between text-xs text-ink-muted pt-1 border-t border-line">
             <span>
               <ElapsedClock since={session.started_at} live={live} />
@@ -403,14 +355,14 @@ export default function SessionDetail() {
 
       <Window icon="transcript" title="Transcript" aria-label="transcript" bodyClassName="p-3">
         <h2 className="sr-only">Transcript</h2>
-        {transcript.length === 0 ? (
+        {messages.length === 0 ? (
           <EmptyState
             illustration="transcript"
             title="No transcript yet"
             message="Once the agent emits its first turn, prompts and tool I/O stream in here."
           />
         ) : (
-          <Transcript transcript={transcript} />
+          <TranscriptShell messages={messages} />
         )}
       </Window>
     </div>
@@ -418,19 +370,19 @@ export default function SessionDetail() {
 }
 
 /**
- * Transcript with a right-edge sticky scrubber + jump-to-latest CTA + j/k
- * keyboard navigation. Splitting this into its own component keeps the
- * (otherwise large) parent focused on data fetching.
+ * Wraps TranscriptViewer with the scrubber + j/k keyboard navigation +
+ * "jump to latest" CTA. Splitting it out keeps the page-level component
+ * focused on data fetching and lets the viewer stay pure-presentational.
  */
-function Transcript({ transcript }: { transcript: TranscriptMessage[] }) {
+function TranscriptShell({ messages }: { messages: TranscriptViewerMessage[] }) {
   const refs = useRef<Array<HTMLElement | null>>([]);
-  const [activeIndex, setActiveIndex] = useState(transcript.length - 1);
+  const [activeIndex, setActiveIndex] = useState(messages.length - 1);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
-  // Keep the refs array in sync with the transcript length so callbacks
+  // Keep the refs array in sync with the messages length so callbacks
   // never read past the end.
-  if (refs.current.length !== transcript.length) {
-    refs.current = transcript.map((_, i) => refs.current[i] ?? null);
+  if (refs.current.length !== messages.length) {
+    refs.current = messages.map((_, i) => refs.current[i] ?? null);
   }
 
   const scrollToIndex = useCallback((idx: number) => {
@@ -452,7 +404,7 @@ function Transcript({ transcript }: { transcript: TranscriptMessage[] }) {
       if (e.key === "j") {
         e.preventDefault();
         setActiveIndex((i) => {
-          const next = Math.min(transcript.length - 1, i + 1);
+          const next = Math.min(messages.length - 1, i + 1);
           scrollToIndex(next);
           return next;
         });
@@ -467,12 +419,12 @@ function Transcript({ transcript }: { transcript: TranscriptMessage[] }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [transcript.length, scrollToIndex]);
+  }, [messages.length, scrollToIndex]);
 
   // Watch the last message's visibility so we can flip "jump to latest" on/off.
   useEffect(() => {
-    if (transcript.length === 0) return;
-    const last = refs.current[transcript.length - 1];
+    if (messages.length === 0) return;
+    const last = refs.current[messages.length - 1];
     if (!last || typeof IntersectionObserver === "undefined") return;
     const obs = new IntersectionObserver(
       (entries) => {
@@ -484,25 +436,21 @@ function Transcript({ transcript }: { transcript: TranscriptMessage[] }) {
     );
     obs.observe(last);
     return () => obs.disconnect();
-  }, [transcript.length]);
+  }, [messages.length]);
 
   return (
     <div className="relative flex gap-2">
-      <div className="flex-1 min-w-0 space-y-3" data-testid="transcript-list">
-        {transcript.map((m, i) => (
-          <div
-            key={m.message_id}
-            ref={(el) => {
-              refs.current[i] = el;
-            }}
-          >
-            <MessageBlock m={m} />
-          </div>
-        ))}
+      <div className="flex-1 min-w-0">
+        <TranscriptViewer
+          messages={messages}
+          registerRef={(i, el) => {
+            refs.current[i] = el;
+          }}
+        />
       </div>
 
       <Scrubber
-        transcript={transcript}
+        messages={messages}
         activeIndex={activeIndex}
         onJump={(i) => {
           setActiveIndex(i);
@@ -514,7 +462,7 @@ function Transcript({ transcript }: { transcript: TranscriptMessage[] }) {
         <button
           type="button"
           onClick={() => {
-            const last = transcript.length - 1;
+            const last = messages.length - 1;
             setActiveIndex(last);
             scrollToIndex(last);
           }}
@@ -534,22 +482,22 @@ function Transcript({ transcript }: { transcript: TranscriptMessage[] }) {
  * specific kind of turn (skip past tool results to the next user prompt).
  */
 function Scrubber({
-  transcript,
+  messages,
   activeIndex,
   onJump,
 }: {
-  transcript: TranscriptMessage[];
+  messages: TranscriptViewerMessage[];
   activeIndex: number;
   onJump(i: number): void;
 }) {
-  if (transcript.length <= 4) return null; // not worth the chrome
+  if (messages.length <= 4) return null; // not worth the chrome
   return (
     <nav
       aria-label="transcript scrubber"
       className="sticky top-28 self-start shrink-0 hidden sm:flex flex-col gap-0.5 max-h-[60vh] overflow-y-auto pr-1"
       data-testid="transcript-scrubber"
     >
-      {transcript.map((m, i) => {
+      {messages.map((m, i) => {
         const code = roleCode(m.role);
         const tone = roleTone(m.role);
         const active = i === activeIndex;
@@ -569,7 +517,7 @@ function Scrubber({
   );
 }
 
-function roleCode(role: TranscriptMessage["role"]): string {
+function roleCode(role: string): string {
   switch (role) {
     case "user":
       return "U";
@@ -579,10 +527,12 @@ function roleCode(role: TranscriptMessage["role"]): string {
       return "T";
     case "system":
       return "S";
+    default:
+      return "?";
   }
 }
 
-function roleTone(role: TranscriptMessage["role"]): string {
+function roleTone(role: string): string {
   switch (role) {
     case "user":
       return "bg-teal-soft text-ink";
@@ -592,5 +542,7 @@ function roleTone(role: TranscriptMessage["role"]): string {
       return "bg-info/15 text-info";
     case "system":
       return "bg-warn/15 text-warn";
+    default:
+      return "bg-surface-2 text-ink-subtle";
   }
 }
