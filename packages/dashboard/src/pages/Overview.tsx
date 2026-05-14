@@ -1,9 +1,13 @@
 import { useMemo } from "react";
 import { Link } from "react-router";
 import type { Session } from "../api/types";
+import ActivityLine from "../components/ActivityLine";
+import AgentKindIcon from "../components/AgentKindIcon";
 import ElapsedClock from "../components/ElapsedClock";
 import EmptyState from "../components/EmptyState";
+import ProjectTreeSection from "../components/ProjectTreeSection";
 import PullToRefreshIndicator from "../components/PullToRefreshIndicator";
+import SessionLabel from "../components/SessionLabel";
 import { ProjectGroupSkeleton } from "../components/Skeleton";
 import StatePill from "../components/StatePill";
 import TokenBadge from "../components/TokenBadge";
@@ -19,10 +23,6 @@ function projectKey(s: Session): string {
 
 function projectLabel(s: Session): string {
   return s.project_label ?? s.worktree_root.split("/").pop() ?? s.worktree_root;
-}
-
-function encodeWorktree(root: string): string {
-  return encodeURIComponent(root);
 }
 
 function staleLabelFor(s: Session): string | undefined {
@@ -114,27 +114,9 @@ export default function Overview() {
         />
       ) : (
         <div className="space-y-5">
-          {grouped.map(([key, list]) => {
-            const label = projectLabel(list[0]);
-            return (
-              <section key={key} className="space-y-2">
-                <Link
-                  to={`/projects/${encodeWorktree(key)}`}
-                  className="flex items-center justify-between min-h-11 -mx-1 px-1 rounded-md text-sm text-zinc-200 hover:text-zinc-100 hover:bg-zinc-900/40"
-                >
-                  <span className="font-medium truncate">{label}</span>
-                  <span className="text-zinc-500 text-xs shrink-0 ml-2">
-                    {list.length} agent{list.length === 1 ? "" : "s"} →
-                  </span>
-                </Link>
-                <ul className="divide-y divide-zinc-800 rounded-md border border-zinc-800 overflow-hidden">
-                  {list.map((s) => (
-                    <SessionRow key={s.session_id} s={s} />
-                  ))}
-                </ul>
-              </section>
-            );
-          })}
+          {grouped.map(([key, list]) => (
+            <ProjectTreeSection key={key} worktreeRoot={key} projectLabel={projectLabel(list[0])} />
+          ))}
         </div>
       )}
 
@@ -164,13 +146,23 @@ function SessionRow({ s }: { s: Session }) {
         className="flex items-center gap-3 px-3 py-3 min-h-12 hover:bg-zinc-900/60 active:bg-zinc-900/80"
       >
         <StatePill state={stale ? "idle" : s.state} label={stale} className="shrink-0" />
+        <AgentKindIcon
+          kind={s.agent_kind ?? null}
+          confidence={s.agent_kind_confidence ?? null}
+          className="shrink-0"
+        />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1 text-sm text-zinc-100 truncate">
-            <span className="truncate font-medium">{s.agent_type ?? "session"}</span>
+          <div className="flex items-center gap-1 text-sm text-zinc-100">
+            <SessionLabel session={s} className="truncate font-medium" />
             {s.last_tool_name ? (
-              <span className="text-zinc-500 text-xs truncate">· {s.last_tool_name}</span>
+              <span className="text-zinc-500 text-xs truncate shrink-0">· {s.last_tool_name}</span>
             ) : null}
           </div>
+          <ActivityLine
+            summary={s.activity_summary ?? null}
+            updatedAt={s.activity_updated_at ?? null}
+            className="mt-0.5"
+          />
           <div className="text-[11px] text-zinc-500 truncate mt-0.5">
             {s.primary_model ?? "model?"} ·{" "}
             {s.state === "done" && s.completed_at ? (
