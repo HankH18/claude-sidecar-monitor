@@ -101,7 +101,7 @@ export default function Overview() {
               <p className="text-[11px] text-ink-muted">
                 Or read the{" "}
                 <a
-                  href="https://github.com/anthropics/claude-sidecar-monitor#quickstart"
+                  href="https://github.com/HankH18/claude-sidecar-monitor#quickstart"
                   target="_blank"
                   rel="noreferrer"
                   className="text-teal hover:text-cta underline"

@@ -7,7 +7,7 @@ Thanks for considering a contribution. This project is small and intentionally s
 ```bash
 brew install sqlcipher
 uv python install 3.12
-git clone https://github.com/hankholcomb/claude-sidecar-monitor
+git clone https://github.com/HankH18/claude-sidecar-monitor
 cd claude-sidecar-monitor
 make bootstrap     # uv sync (collector) + bun install (dashboard)
 make test          # pytest + vitest

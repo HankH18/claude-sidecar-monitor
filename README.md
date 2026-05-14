@@ -1,7 +1,7 @@
 # claude-sidecar-monitor
 
 <!-- ci-badges -->
-[![CI](https://github.com/hankholcomb/claude-sidecar-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hankholcomb/claude-sidecar-monitor/actions/workflows/ci.yml)
+[![CI](https://github.com/HankH18/claude-sidecar-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/HankH18/claude-sidecar-monitor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-0.1.0--rc1-blue.svg)](CHANGELOG.md)
 
@@ -24,7 +24,7 @@ brew install sqlcipher
 curl -LsSf https://astral.sh/uv/install.sh | sh   # installs uv
 
 # 2. Install csm
-uv tool install git+https://github.com/hankholcomb/claude-sidecar-monitor#subdirectory=packages/collector
+uv tool install git+https://github.com/HankH18/claude-sidecar-monitor#subdirectory=packages/collector
 
 # 3. Bootstrap (prompts for passphrase, installs hooks + launchd, opens dashboard)
 csm install

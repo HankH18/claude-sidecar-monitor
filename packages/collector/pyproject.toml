@@ -33,9 +33,9 @@ dependencies = [
 csm = "csm.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/hankholcomb/claude-sidecar-monitor"
-Source = "https://github.com/hankholcomb/claude-sidecar-monitor"
-Issues = "https://github.com/hankholcomb/claude-sidecar-monitor/issues"
+Homepage = "https://github.com/HankH18/claude-sidecar-monitor"
+Source = "https://github.com/HankH18/claude-sidecar-monitor"
+Issues = "https://github.com/HankH18/claude-sidecar-monitor/issues"
 
 [build-system]
 requires = ["hatchling"]

@@ -26,4 +26,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ruff + ruff format + mypy --strict + biome + tsc + vite build all clean.
 - Dashboard bundle: 376 KB JS / 38 KB CSS / PWA precache 405 KiB.
 
-[Unreleased]: https://github.com/hankholcomb/claude-sidecar-monitor/compare/HEAD...HEAD
+[Unreleased]: https://github.com/HankH18/claude-sidecar-monitor/compare/HEAD...HEAD

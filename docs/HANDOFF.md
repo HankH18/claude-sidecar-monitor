@@ -66,7 +66,7 @@ Apple Developer ID isn't required (ADR-003: distribution via `uv tool install`, 
 ```bash
 brew install sqlcipher
 curl -LsSf https://astral.sh/uv/install.sh | sh
-git clone https://github.com/hankholcomb/claude-sidecar-monitor
+git clone https://github.com/HankH18/claude-sidecar-monitor
 cd claude-sidecar-monitor
 make bootstrap
 make check          # lint + typecheck + test (all green)
