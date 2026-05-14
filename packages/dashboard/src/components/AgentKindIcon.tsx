@@ -5,25 +5,31 @@ interface KindSpec {
   glyph: string;
   /** Short label (used as accessible name + tooltip). */
   label: string;
-  /** Tailwind text color for the high-confidence rendering. */
+  /** Tailwind text color for the high-confidence rendering. Warm palette. */
   tone: string;
 }
 
+/**
+ * Each kind gets a distinct glyph and a unique-but-warm color so the
+ * sidebar/tree reads as a glanceable palette rather than a kindergarten
+ * rainbow. We lean on our `teal`, `info`, `cta`, `good`, `warn`, `bad`
+ * tokens plus a couple of ink shades for breadth.
+ */
 const KIND_SPECS: Record<string, KindSpec> = {
-  general: { glyph: "◇", label: "general", tone: "text-zinc-300" },
-  explorer: { glyph: "⌕", label: "explorer", tone: "text-sky-300" },
-  reviewer: { glyph: "✓", label: "reviewer", tone: "text-emerald-300" },
-  planner: { glyph: "≡", label: "planner", tone: "text-violet-300" },
-  coder: { glyph: "❮❯", label: "coder", tone: "text-amber-300" },
-  debugger: { glyph: "𝛌", label: "debugger", tone: "text-rose-300" },
-  refactorer: { glyph: "⇋", label: "refactorer", tone: "text-cyan-300" },
-  tester: { glyph: "✓✓", label: "tester", tone: "text-teal-300" },
+  general: { glyph: "◇", label: "general", tone: "text-ink-muted" },
+  explorer: { glyph: "⌕", label: "explorer", tone: "text-info" },
+  reviewer: { glyph: "✓", label: "reviewer", tone: "text-good" },
+  planner: { glyph: "≡", label: "planner", tone: "text-teal" },
+  coder: { glyph: "❮❯", label: "coder", tone: "text-warn" },
+  debugger: { glyph: "𝛌", label: "debugger", tone: "text-bad" },
+  refactorer: { glyph: "⇋", label: "refactorer", tone: "text-teal" },
+  tester: { glyph: "✓✓", label: "tester", tone: "text-good" },
 };
 
 const DEFAULT_SPEC: KindSpec = {
   glyph: "·",
   label: "agent",
-  tone: "text-zinc-400",
+  tone: "text-ink-muted",
 };
 
 export interface AgentKindIconProps {
@@ -50,7 +56,7 @@ export default function AgentKindIcon({
   if (!kind) return null;
   const spec = KIND_SPECS[kind] ?? DEFAULT_SPEC;
   const muted = typeof confidence === "number" && confidence < KIND_CONFIDENCE_MUTED;
-  const tone = muted ? "text-zinc-500 opacity-60" : spec.tone;
+  const tone = muted ? "text-ink-subtle opacity-60" : spec.tone;
   const ariaLabel = muted ? `${spec.label} (low confidence)` : spec.label;
   return (
     <span

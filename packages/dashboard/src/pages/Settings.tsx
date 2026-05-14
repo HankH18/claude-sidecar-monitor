@@ -4,24 +4,24 @@ import { useMock } from "../api/mode";
 import type { Settings as SettingsT } from "../api/types";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
+import Window from "../components/Window";
 import { useSettings } from "../hooks/useSettings";
 
 /**
- * Button intent classes — small palette so a glance tells you what each
- * action does:
- *   - primary   = save/submit (filled emerald)
- *   - secondary = neutral, info-y action (outlined zinc)
- *   - danger    = irreversible (outlined red, fills on hover)
+ * Button intent classes — palette tuned to the warm theme:
+ *   - primary   = save/submit (orange CTA, beveled, depresses on click)
+ *   - secondary = neutral action (outlined warm surface)
+ *   - danger    = irreversible (warm-red outline)
  */
 const BTN_PRIMARY =
-  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm font-medium bg-emerald-500 text-emerald-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm font-medium bg-cta text-white shadow-[0_1px_0_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.25)] hover:bg-cta-hover active:translate-y-px active:shadow-[inset_0_1px_2px_rgba(0,0,0,0.18)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 const BTN_SECONDARY =
-  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm text-zinc-200 border border-zinc-700 hover:bg-zinc-800/80 disabled:opacity-50 transition-colors";
+  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm text-ink border border-line-strong bg-surface hover:bg-surface-2 active:translate-y-px disabled:opacity-50 transition-colors";
 const BTN_DANGER =
-  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm font-medium text-red-300 border border-red-500/50 hover:bg-red-500/15 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm font-medium text-bad border border-bad/60 bg-surface hover:bg-bad/10 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 
 const INPUT =
-  "w-full min-h-11 px-3 rounded-md bg-zinc-900 border border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/60 focus:outline-none";
+  "w-full min-h-11 px-3 rounded-md bg-surface border border-line text-sm text-ink placeholder:text-ink-subtle focus:border-teal focus:outline-none";
 
 /**
  * Generate a 16-char base32 ntfy topic. We use crypto.getRandomValues so
@@ -56,10 +56,10 @@ export default function Settings() {
   if (loading || !form) {
     return (
       <div className="space-y-4" aria-busy="true">
-        <div className="h-5 w-24 rounded bg-zinc-800/60 animate-pulse" />
-        <div className="h-11 rounded-md bg-zinc-800/40 animate-pulse" />
-        <div className="h-11 rounded-md bg-zinc-800/40 animate-pulse" />
-        <div className="h-11 rounded-md bg-zinc-800/40 animate-pulse" />
+        <div className="h-6 w-24 rounded bg-line/60 animate-pulse" />
+        <div className="h-11 rounded-md bg-line/40 animate-pulse" />
+        <div className="h-11 rounded-md bg-line/40 animate-pulse" />
+        <div className="h-11 rounded-md bg-line/40 animate-pulse" />
       </div>
     );
   }
@@ -79,140 +79,146 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-6">
       <header>
-        <h1 className="text-lg font-semibold text-zinc-100">Settings</h1>
+        <h1 className="text-2xl font-semibold text-ink leading-tight">Settings</h1>
       </header>
 
-      <form onSubmit={onSubmit} className="space-y-5" aria-label="settings form">
-        <Field
-          id="hang_yellow_ms"
-          label="Hang yellow threshold (ms)"
-          hint="Mark a session stale after this many ms without an event."
-        >
-          <input
-            id="hang_yellow_ms"
-            name="hang_yellow_ms"
-            type="number"
-            min={1000}
-            max={3_600_000}
-            step={1000}
-            className={INPUT}
-            value={form.hang_yellow_ms}
-            onChange={(e) => setForm({ ...form, hang_yellow_ms: Number(e.target.value) || 0 })}
-          />
-        </Field>
-
-        <Field
-          id="hang_red_ms"
-          label="Hang red threshold (ms)"
-          hint="Mark a session hung after this many ms; triggers ntfy."
-        >
-          <input
-            id="hang_red_ms"
-            name="hang_red_ms"
-            type="number"
-            min={1000}
-            max={3_600_000}
-            step={1000}
-            className={INPUT}
-            value={form.hang_red_ms}
-            onChange={(e) => setForm({ ...form, hang_red_ms: Number(e.target.value) || 0 })}
-          />
-        </Field>
-
-        <Field
-          id="ntfy_topic"
-          label="ntfy.sh topic"
-          hint="Public ntfy topic for hang/done pushes. Empty disables notifications."
-        >
-          <input
-            id="ntfy_topic"
-            name="ntfy_topic"
-            type="text"
-            autoComplete="off"
-            className={INPUT}
-            value={form.ntfy_topic}
-            onChange={(e) => setForm({ ...form, ntfy_topic: e.target.value })}
-          />
-          {!form.ntfy_topic ? (
-            <div
-              className="rounded-md border border-amber-500/30 bg-amber-500/5 text-[11px] text-amber-200 px-3 py-2 mt-2 space-y-1"
-              data-testid="ntfy-empty-hint"
+      <form onSubmit={onSubmit} aria-label="settings form" className="space-y-6">
+        <Window icon="settings" title="Hang thresholds" aria-label="hang thresholds">
+          <div className="space-y-5">
+            <Field
+              id="hang_yellow_ms"
+              label="Hang yellow threshold (ms)"
+              hint="Mark a session stale after this many ms without an event."
             >
-              <p>
-                No topic set. Push notifications need a topic — sign up at{" "}
-                <a
-                  href="https://ntfy.sh/"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline hover:text-amber-100"
-                >
-                  ntfy.sh
-                </a>{" "}
-                or generate one.
-              </p>
-              <button
-                type="button"
-                className="inline-flex items-center min-h-9 px-3 rounded border border-amber-500/40 text-amber-100 hover:bg-amber-500/15 text-[11px]"
-                onClick={() => setForm({ ...form, ntfy_topic: generateNtfyTopic() })}
-              >
-                Generate random topic
-              </button>
-            </div>
-          ) : null}
+              <input
+                id="hang_yellow_ms"
+                name="hang_yellow_ms"
+                type="number"
+                min={1000}
+                max={3_600_000}
+                step={1000}
+                className={INPUT}
+                value={form.hang_yellow_ms}
+                onChange={(e) => setForm({ ...form, hang_yellow_ms: Number(e.target.value) || 0 })}
+              />
+            </Field>
 
-          <NtfyPreview topic={form.ntfy_topic} />
-        </Field>
+            <Field
+              id="hang_red_ms"
+              label="Hang red threshold (ms)"
+              hint="Mark a session hung after this many ms; triggers ntfy."
+            >
+              <input
+                id="hang_red_ms"
+                name="hang_red_ms"
+                type="number"
+                min={1000}
+                max={3_600_000}
+                step={1000}
+                className={INPUT}
+                value={form.hang_red_ms}
+                onChange={(e) => setForm({ ...form, hang_red_ms: Number(e.target.value) || 0 })}
+              />
+            </Field>
+          </div>
+        </Window>
+
+        <Window icon="alert" title="Notifications" aria-label="notifications">
+          <Field
+            id="ntfy_topic"
+            label="ntfy.sh topic"
+            hint="Public ntfy topic for hang/done pushes. Empty disables notifications."
+          >
+            <input
+              id="ntfy_topic"
+              name="ntfy_topic"
+              type="text"
+              autoComplete="off"
+              className={INPUT}
+              value={form.ntfy_topic}
+              onChange={(e) => setForm({ ...form, ntfy_topic: e.target.value })}
+            />
+            {!form.ntfy_topic ? (
+              <div
+                className="rounded-md border border-warn/40 bg-warn/10 text-ink text-[11px] px-3 py-2 mt-2 space-y-1"
+                data-testid="ntfy-empty-hint"
+              >
+                <p>
+                  No topic set. Push notifications need a topic — sign up at{" "}
+                  <a
+                    href="https://ntfy.sh/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline hover:text-cta"
+                  >
+                    ntfy.sh
+                  </a>{" "}
+                  or generate one.
+                </p>
+                <button
+                  type="button"
+                  className="inline-flex items-center min-h-9 px-3 rounded border border-warn/40 text-warn hover:bg-warn/15 text-[11px] active:translate-y-px"
+                  onClick={() => setForm({ ...form, ntfy_topic: generateNtfyTopic() })}
+                >
+                  Generate random topic
+                </button>
+              </div>
+            ) : null}
+
+            <NtfyPreview topic={form.ntfy_topic} />
+          </Field>
+        </Window>
+
+        <ApprovalForm form={form} setForm={setForm} />
 
         <div className="flex items-center gap-3 flex-wrap">
           <button type="submit" className={BTN_PRIMARY}>
             Save
           </button>
           {savedAt ? (
-            <span className="text-xs text-emerald-400">
+            <span className="text-xs text-good">
               saved {new Date(savedAt).toLocaleTimeString()}
             </span>
           ) : null}
-          {error ? <span className="text-xs text-red-400">{error}</span> : null}
+          {error ? <span className="text-xs text-bad">{error}</span> : null}
         </div>
       </form>
 
-      <ApprovalForm form={form} setForm={setForm} />
+      <Window icon="doc" title="Actions" aria-label="actions">
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={async () => {
+              if (mock) {
+                push({
+                  message: "Test notification sent (mock).",
+                  variant: "success",
+                });
+                return;
+              }
+              try {
+                await apiPost("/api/test-notification");
+                push({ message: "Test notification fired.", variant: "success" });
+              } catch (err) {
+                const msg = (err as Error).message;
+                setError(msg);
+                push({ message: `Test notification failed: ${msg}`, variant: "error" });
+              }
+            }}
+            className={BTN_SECONDARY}
+          >
+            Test notification
+          </button>
 
-      <section className="space-y-3 border-t border-zinc-800 pt-5">
-        <h2 className="text-xs uppercase tracking-wide text-zinc-500">Actions</h2>
+          <PurgeForm mock={mock} />
 
-        <button
-          type="button"
-          onClick={async () => {
-            if (mock) {
-              push({
-                message: "Test notification sent (mock).",
-                variant: "success",
-              });
-              return;
-            }
-            try {
-              await apiPost("/api/test-notification");
-              push({ message: "Test notification fired.", variant: "success" });
-            } catch (err) {
-              const msg = (err as Error).message;
-              setError(msg);
-              push({ message: `Test notification failed: ${msg}`, variant: "error" });
-            }
-          }}
-          className={BTN_SECONDARY}
-        >
-          Test notification
-        </button>
-
-        <PurgeForm mock={mock} />
-
-        <button type="button" className={BTN_DANGER} onClick={() => setShowPassphrase(true)}>
-          Change passphrase
-        </button>
-      </section>
+          <button type="button" className={BTN_DANGER} onClick={() => setShowPassphrase(true)}>
+            Change passphrase
+          </button>
+        </div>
+      </Window>
 
       {showPassphrase ? <PassphraseModal onClose={() => setShowPassphrase(false)} /> : null}
     </div>
@@ -232,11 +238,11 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-xs font-medium text-zinc-300">
+      <label htmlFor={id} className="block text-xs font-medium text-ink">
         {label}
       </label>
       {children}
-      {hint ? <p className="text-[11px] text-zinc-500">{hint}</p> : null}
+      {hint ? <p className="text-[11px] text-ink-muted">{hint}</p> : null}
     </div>
   );
 }
@@ -250,13 +256,13 @@ function NtfyPreview({ topic }: { topic: string }) {
   if (!topic) return null;
   return (
     <div
-      className="mt-2 rounded-md border border-zinc-800 bg-zinc-900/50 p-3 text-[11px] font-mono text-zinc-300 space-y-0.5"
+      className="mt-2 rounded-md border border-line bg-code-bg p-3 text-[11px] font-mono text-code-text space-y-0.5"
       data-testid="ntfy-preview"
       aria-label="ntfy notification preview"
     >
-      <div className="text-zinc-100">⚠ Sidecar — agent hung</div>
-      <div className="text-zinc-400">project: sidecar · tool: Bash (3m)</div>
-      <div className="text-zinc-500">→ tap to open the dashboard</div>
+      <div className="text-code-text">⚠ Sidecar — agent hung</div>
+      <div className="text-code-text/80">project: sidecar · tool: Bash (3m)</div>
+      <div className="text-code-text/60">→ tap to open the dashboard</div>
     </div>
   );
 }
@@ -280,10 +286,10 @@ function PurgeForm({ mock }: { mock: boolean }) {
 
   return (
     <div className="space-y-1.5">
-      <label htmlFor="purge_before" className="block text-xs font-medium text-zinc-300">
+      <label htmlFor="purge_before" className="block text-xs font-medium text-ink">
         Purge data older than
       </label>
-      <p className="text-[11px] text-zinc-500">
+      <p className="text-[11px] text-ink-muted">
         Permanently deletes session and event rows before the chosen date.
       </p>
       <div className="flex gap-2 mt-1">
@@ -314,11 +320,11 @@ function PurgeForm({ mock }: { mock: boolean }) {
           <div className="space-y-2">
             <p>
               This permanently deletes sessions and events with{" "}
-              <code className="text-zinc-200">started_at</code> before{" "}
-              <strong className="text-zinc-200">{date || "—"}</strong>.
+              <code className="text-ink">started_at</code> before{" "}
+              <strong className="text-ink">{date || "—"}</strong>.
             </p>
-            <p className="text-zinc-500">
-              Approximately <strong className="text-zinc-300">{estimate}</strong> row
+            <p className="text-ink-muted">
+              Approximately <strong className="text-ink">{estimate}</strong> row
               {estimate === 1 ? "" : "s"} will be removed. This cannot be undone.
             </p>
           </div>
@@ -369,94 +375,95 @@ function ApprovalForm({
   setForm: (s: SettingsT) => void;
 }) {
   return (
-    <section
-      className="space-y-4 border-t border-zinc-800 pt-5"
+    <Window
+      icon="approval"
+      title="Phone permission approval"
       aria-label="phone permission approval"
     >
-      <h2 className="text-xs uppercase tracking-wide text-zinc-500">Phone permission approval</h2>
+      <div className="space-y-5">
+        <Field
+          id="approval_enabled"
+          label="Enable phone approval"
+          hint="When on, configured tool calls require an approval decision from this dashboard."
+        >
+          <label className="inline-flex items-center gap-2 cursor-pointer min-h-11">
+            <input
+              id="approval_enabled"
+              type="checkbox"
+              className="h-4 w-4 accent-cta"
+              checked={!!form.approval_enabled}
+              onChange={(e) => setForm({ ...form, approval_enabled: e.target.checked })}
+            />
+            <span className="text-sm text-ink">
+              {form.approval_enabled ? "Enabled" : "Disabled"}
+            </span>
+          </label>
+        </Field>
 
-      <Field
-        id="approval_enabled"
-        label="Enable phone approval"
-        hint="When on, configured tool calls require an approval decision from this dashboard."
-      >
-        <label className="inline-flex items-center gap-2 cursor-pointer min-h-11">
-          <input
-            id="approval_enabled"
-            type="checkbox"
-            className="h-4 w-4 accent-emerald-500"
-            checked={!!form.approval_enabled}
-            onChange={(e) => setForm({ ...form, approval_enabled: e.target.checked })}
-          />
-          <span className="text-sm text-zinc-200">
-            {form.approval_enabled ? "Enabled" : "Disabled"}
-          </span>
-        </label>
-      </Field>
-
-      <Field
-        id="approval_tools"
-        label="Tools requiring approval"
-        hint="Comma-separated list of tool names. Empty = approve everything when enabled."
-      >
-        <input
+        <Field
           id="approval_tools"
-          name="approval_tools"
-          type="text"
-          autoComplete="off"
-          placeholder="Bash, Edit, Write"
-          className={INPUT}
-          value={form.approval_tools ?? ""}
-          onChange={(e) => setForm({ ...form, approval_tools: e.target.value })}
-        />
-      </Field>
+          label="Tools requiring approval"
+          hint="Comma-separated list of tool names. Empty = approve everything when enabled."
+        >
+          <input
+            id="approval_tools"
+            name="approval_tools"
+            type="text"
+            autoComplete="off"
+            placeholder="Bash, Edit, Write"
+            className={INPUT}
+            value={form.approval_tools ?? ""}
+            onChange={(e) => setForm({ ...form, approval_tools: e.target.value })}
+          />
+        </Field>
 
-      <Field
-        id="approval_timeout_ms"
-        label="Approval timeout (ms)"
-        hint="If no decision arrives within this window the request times out and the hook falls back to its default."
-      >
-        <input
+        <Field
           id="approval_timeout_ms"
-          name="approval_timeout_ms"
-          type="number"
-          min={1000}
-          max={600_000}
-          step={1000}
-          className={INPUT}
-          value={form.approval_timeout_ms ?? 60_000}
-          onChange={(e) => setForm({ ...form, approval_timeout_ms: Number(e.target.value) || 0 })}
-        />
-      </Field>
+          label="Approval timeout (ms)"
+          hint="If no decision arrives within this window the request times out and the hook falls back to its default."
+        >
+          <input
+            id="approval_timeout_ms"
+            name="approval_timeout_ms"
+            type="number"
+            min={1000}
+            max={600_000}
+            step={1000}
+            className={INPUT}
+            value={form.approval_timeout_ms ?? 60_000}
+            onChange={(e) => setForm({ ...form, approval_timeout_ms: Number(e.target.value) || 0 })}
+          />
+        </Field>
 
-      <Field
-        id="dashboard_url"
-        label="Dashboard URL for deep-links"
-        hint="Used in ntfy push notifications so tapping opens this dashboard. e.g. https://csm.tail-scale.ts.net"
-      >
-        <input
+        <Field
           id="dashboard_url"
-          name="dashboard_url"
-          type="url"
-          autoComplete="off"
-          placeholder="https://csm.tail-scale.ts.net"
-          className={INPUT}
-          value={form.dashboard_url ?? ""}
-          onChange={(e) => setForm({ ...form, dashboard_url: e.target.value })}
-        />
-      </Field>
+          label="Dashboard URL for deep-links"
+          hint="Used in ntfy push notifications so tapping opens this dashboard. e.g. https://csm.tail-scale.ts.net"
+        >
+          <input
+            id="dashboard_url"
+            name="dashboard_url"
+            type="url"
+            autoComplete="off"
+            placeholder="https://csm.tail-scale.ts.net"
+            className={INPUT}
+            value={form.dashboard_url ?? ""}
+            onChange={(e) => setForm({ ...form, dashboard_url: e.target.value })}
+          />
+        </Field>
 
-      <div className="space-y-1.5">
-        <p className="block text-xs font-medium text-zinc-300">Regenerate api_secret</p>
-        <p className="text-[11px] text-zinc-500">
-          Rotates the install's API secret. Disabled until the collector exposes an endpoint — for
-          now run <code className="text-zinc-300">csm install</code> to regenerate.
-        </p>
-        <button type="button" disabled className={`${BTN_DANGER} disabled:cursor-not-allowed`}>
-          Regenerate api_secret (coming soon)
-        </button>
+        <div className="space-y-1.5">
+          <p className="block text-xs font-medium text-ink">Regenerate api_secret</p>
+          <p className="text-[11px] text-ink-muted">
+            Rotates the install's API secret. Disabled until the collector exposes an endpoint — for
+            now run <code className="text-ink">csm install</code> to regenerate.
+          </p>
+          <button type="button" disabled className={`${BTN_DANGER} disabled:cursor-not-allowed`}>
+            Regenerate api_secret (coming soon)
+          </button>
+        </div>
       </div>
-    </section>
+    </Window>
   );
 }
 
@@ -476,84 +483,103 @@ function PassphraseModal({ onClose }: { onClose: () => void }) {
         type="button"
         aria-label="close"
         onClick={onClose}
-        className="absolute inset-0 bg-black/70 cursor-default"
+        className="absolute inset-0 bg-black/40 cursor-default"
       />
       <dialog
         open
         aria-modal="true"
         aria-label="change passphrase"
-        className="relative bg-zinc-950 border border-zinc-700 rounded-md p-5 w-full max-w-sm space-y-3 text-zinc-100"
+        className="relative bg-surface rounded-md w-full max-w-sm text-ink border border-line shadow-[0_8px_24px_rgba(60,40,10,0.18)] overflow-hidden p-0"
       >
-        <h3 className="text-sm font-semibold">Change passphrase</h3>
-        <p className="text-[11px] text-zinc-500">
-          Re-encrypts the local SQLite store with a new passphrase. Don't lose this — there is no
-          recovery path.
-        </p>
-        <div
-          className="rounded-md border border-amber-500/30 bg-amber-500/5 text-amber-200 text-[11px] px-3 py-2"
-          role="note"
-        >
-          ⚠ This will lock you out if you forget the new passphrase. Keep a backup.
-        </div>
-        <input
-          aria-label="old passphrase"
-          type="password"
-          placeholder="current"
-          value={oldPp}
-          onChange={(e) => setOldPp(e.target.value)}
-          className={INPUT}
-        />
-        <input
-          aria-label="new passphrase"
-          type="password"
-          placeholder="new"
-          value={newPp}
-          onChange={(e) => setNewPp(e.target.value)}
-          className={INPUT}
-        />
-        <input
-          aria-label="confirm new passphrase"
-          type="password"
-          placeholder="confirm new"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          className={INPUT}
-        />
-        {mismatch ? (
-          <p className="text-xs text-red-400" data-testid="passphrase-mismatch">
-            New passphrase doesn't match the confirmation.
+        <header className="flex items-center gap-1.5 min-h-8 px-3 py-1.5 bg-titlebar border-b border-line">
+          <span aria-hidden="true" className="text-ink-muted">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.2}
+              aria-hidden="true"
+              focusable="false"
+            >
+              <rect x="3.5" y="6" width="7" height="6" rx="1" />
+              <path d="M5 6V4.5a2 2 0 014 0V6" />
+            </svg>
+          </span>
+          <span className="text-[12px] font-medium leading-tight truncate">Change passphrase</span>
+        </header>
+        <div className="p-5 space-y-3">
+          <p className="text-[11px] text-ink-muted">
+            Re-encrypts the local SQLite store with a new passphrase. Don't lose this — there is no
+            recovery path.
           </p>
-        ) : null}
-        {err ? <p className="text-xs text-red-400">{err}</p> : null}
-        <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={onClose} className={BTN_SECONDARY}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy || !oldPp || !newPp || newPp !== confirm}
-            onClick={async () => {
-              setErr(null);
-              setBusy(true);
-              try {
-                // Real backend call lands here once /api/change-passphrase ships.
-                push({ message: "Passphrase rotated.", variant: "success" });
-                onClose();
-              } catch (e) {
-                const msg = (e as Error).message;
-                setErr(msg);
-                push({
-                  message: `Failed to rotate passphrase: ${msg}`,
-                  variant: "error",
-                });
-              } finally {
-                setBusy(false);
-              }
-            }}
-            className={BTN_DANGER}
+          <div
+            className="rounded-md border border-warn/40 bg-warn/10 text-ink text-[11px] px-3 py-2"
+            role="note"
           >
-            Rotate
-          </button>
+            ⚠ This will lock you out if you forget the new passphrase. Keep a backup.
+          </div>
+          <input
+            aria-label="old passphrase"
+            type="password"
+            placeholder="current"
+            value={oldPp}
+            onChange={(e) => setOldPp(e.target.value)}
+            className={INPUT}
+          />
+          <input
+            aria-label="new passphrase"
+            type="password"
+            placeholder="new"
+            value={newPp}
+            onChange={(e) => setNewPp(e.target.value)}
+            className={INPUT}
+          />
+          <input
+            aria-label="confirm new passphrase"
+            type="password"
+            placeholder="confirm new"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className={INPUT}
+          />
+          {mismatch ? (
+            <p className="text-xs text-bad" data-testid="passphrase-mismatch">
+              New passphrase doesn't match the confirmation.
+            </p>
+          ) : null}
+          {err ? <p className="text-xs text-bad">{err}</p> : null}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className={BTN_SECONDARY}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy || !oldPp || !newPp || newPp !== confirm}
+              onClick={async () => {
+                setErr(null);
+                setBusy(true);
+                try {
+                  // Real backend call lands here once /api/change-passphrase ships.
+                  push({ message: "Passphrase rotated.", variant: "success" });
+                  onClose();
+                } catch (e) {
+                  const msg = (e as Error).message;
+                  setErr(msg);
+                  push({
+                    message: `Failed to rotate passphrase: ${msg}`,
+                    variant: "error",
+                  });
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              className={BTN_DANGER}
+            >
+              Rotate
+            </button>
+          </div>
         </div>
       </dialog>
     </div>

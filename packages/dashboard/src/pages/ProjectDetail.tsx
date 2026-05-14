@@ -7,6 +7,7 @@ import EmptyState from "../components/EmptyState";
 import { ProjectSummarySkeleton, TreeSkeleton } from "../components/Skeleton";
 import { formatTokens } from "../components/TokenBadge";
 import TreeRow, { TREE_ROW_HEIGHT, toRowData, type TreeRowData } from "../components/TreeNode";
+import Window from "../components/Window";
 import { useSessions } from "../hooks/useSessions";
 import { useTree } from "../hooks/useTree";
 
@@ -120,9 +121,9 @@ export default function ProjectDetail() {
   if (loading) {
     return (
       <div className="space-y-4" aria-busy="true">
-        <div className="h-3 w-12 rounded bg-zinc-800/60 animate-pulse" />
-        <div className="h-6 w-2/3 rounded bg-zinc-800/60 animate-pulse" />
-        <div className="h-3 w-3/4 rounded bg-zinc-800/40 animate-pulse" />
+        <div className="h-3 w-12 rounded bg-line/60 animate-pulse" />
+        <div className="h-6 w-2/3 rounded bg-line/60 animate-pulse" />
+        <div className="h-3 w-3/4 rounded bg-line/40 animate-pulse" />
         <ProjectSummarySkeleton />
         <TreeSkeleton rows={5} />
       </div>
@@ -133,8 +134,8 @@ export default function ProjectDetail() {
     return (
       <div className="space-y-3">
         <Breadcrumbs items={[{ label: "Live", to: "/" }, { label: "Project" }]} />
-        <h1 className="text-lg font-semibold text-zinc-100">Project</h1>
-        <p className="text-sm text-zinc-500">Project not found.</p>
+        <h1 className="text-2xl font-semibold text-ink">Project</h1>
+        <p className="text-sm text-ink-muted">Project not found.</p>
       </div>
     );
   }
@@ -143,29 +144,28 @@ export default function ProjectDetail() {
     <div className="space-y-5">
       <Breadcrumbs items={[{ label: "Live", to: "/" }, { label: projectLabel }]} />
       <header className="space-y-1">
-        <h1 className="text-lg font-semibold text-zinc-100">{projectLabel}</h1>
-        <p className="text-[11px] text-zinc-500 break-all">{worktreeRoot}</p>
+        <h1 className="text-2xl font-semibold text-ink leading-tight">{projectLabel}</h1>
+        <p className="text-[11px] text-ink-muted break-all">{worktreeRoot}</p>
       </header>
 
-      <section
-        aria-label="project summary"
-        className="grid grid-cols-2 gap-3 text-sm rounded-md border border-zinc-800 p-4"
-      >
-        <SummaryItem label="agents" value={String(summary.agents)} />
-        <SummaryItem label="tool calls" value={String(summary.toolCalls)} />
-        <SummaryItem
-          label="oldest start"
-          value={summary.oldest ? new Date(summary.oldest).toLocaleTimeString() : "—"}
-        />
-        <SummaryItem label="total tokens" value={formatTokens(summary.totalTokens)} />
-      </section>
+      <Window icon="doc" title="Summary" aria-label="project summary">
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <SummaryItem label="agents" value={String(summary.agents)} />
+          <SummaryItem label="tool calls" value={String(summary.toolCalls)} />
+          <SummaryItem
+            label="oldest start"
+            value={summary.oldest ? new Date(summary.oldest).toLocaleTimeString() : "—"}
+          />
+          <SummaryItem label="total tokens" value={formatTokens(summary.totalTokens)} />
+        </div>
+      </Window>
 
-      <section aria-label="agent tree" className="rounded-md border border-zinc-800">
+      <Window icon="agents" title="Agent tree" aria-label="agent tree" bodyClassName="p-0">
         {rows.length === 0 ? (
           <EmptyState
             illustration="agents"
             title="No sessions in this project"
-            message="Sessions for this worktree will show up the moment a Claude Code agent starts work here."
+            message="Sessions for this worktree show up the moment a Claude Code agent starts work here."
             className="border-0 bg-transparent"
           />
         ) : (
@@ -196,7 +196,7 @@ export default function ProjectDetail() {
             {TreeRow}
           </Tree>
         )}
-      </section>
+      </Window>
     </div>
   );
 }
@@ -216,8 +216,8 @@ function countNodes(rows: TreeRowData[]): number {
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className="text-zinc-100 font-mono text-sm mt-0.5">{value}</div>
+      <div className="text-[10px] uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className="text-ink font-mono text-sm mt-0.5">{value}</div>
     </div>
   );
 }

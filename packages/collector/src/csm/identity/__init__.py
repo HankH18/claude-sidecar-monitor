@@ -17,17 +17,23 @@ ingest time and the results are written denormalised onto the
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import re
 from dataclasses import dataclass
+from typing import Any
 
 __all__ = [
     "AGENT_KINDS",
     "TITLE_MAX_LEN",
     "AgentKindResult",
+    "backfill_titles",
     "derive_title_from_user_prompt",
     "generate_nickname",
     "infer_agent_kind",
 ]
+
+_log = logging.getLogger(__name__)
 
 TITLE_MAX_LEN = 80
 
@@ -63,7 +69,58 @@ class AgentKindResult:
 # the user's actual intent, not the harness preamble.
 _COMMAND_MESSAGE_RE = re.compile(r"<command-(message|name|args)>.*?</command-\1>", re.DOTALL)
 _TRIPLE_FENCE_RE = re.compile(r"^\s*```[^\n]*\n", re.MULTILINE)
+# Leading bullets / blockquote markers / list dashes / hashes.
 _LEADING_PUNCT_RE = re.compile(r"^[\s>#*•\-]+")
+# Slash-command invocation at the very start of the prompt, e.g.
+#   `/plan take a look ...` -> `take a look ...`
+#   `/review src/foo.ts` -> `Review src/foo.ts` (caller re-capitalises)
+_LEADING_SLASH_CMD_RE = re.compile(r"^/([A-Za-z][\w\-]*)(?:\s+|$)")
+# Inline markdown emphasis we want to drop (just the markers, keep text).
+_MD_BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
+_MD_ITALIC_RE = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)")
+_MD_INLINE_CODE_RE = re.compile(r"`([^`]+)`")
+# Sentence terminator followed by whitespace. Don't split on `?.` mid-word
+# (URLs, abbreviations) — require a trailing space or end-of-string.
+_SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)")
+# Whitespace runs collapsed to single space.
+_WHITESPACE_RE = re.compile(r"\s+")
+
+# Slash commands that don't usefully describe the session; if we see one
+# with no other content we keep the command-name as the title hint.
+_GENERIC_SLASH_CMDS = frozenset({"clear", "help", "exit", "compact", "model"})
+
+
+def _strip_markdown_inline(text: str) -> str:
+    """Drop **bold**/*italic*/`code` markers — keep their inner text."""
+    text = _MD_BOLD_RE.sub(r"\1", text)
+    text = _MD_ITALIC_RE.sub(r"\1", text)
+    text = _MD_INLINE_CODE_RE.sub(r"\1", text)
+    return text
+
+
+def _first_sentence(text: str, max_len: int) -> str:
+    """Return the first sentence of ``text``, falling back to a hard
+    word-boundary truncation if it's longer than ``max_len``."""
+    m = _SENTENCE_END_RE.search(text)
+    if m is not None:
+        candidate = text[: m.end()].rstrip()
+        if len(candidate) <= max_len:
+            return candidate
+    return _truncate_at_word(text, max_len)
+
+
+def _sentence_case(text: str) -> str:
+    """Capitalise the first letter if it's a lowercase ASCII letter and
+    not part of an obvious identifier (path/CamelCase/snake_case)."""
+    if not text:
+        return text
+    first = text[0]
+    # Path / URL / camelCase / snake_case — leave alone.
+    if first in "/_." or any(c in text[:8] for c in "/_") or text[:8].isupper():
+        return text
+    if first.islower():
+        return first.upper() + text[1:]
+    return text
 
 
 def derive_title_from_user_prompt(text: str | None) -> str | None:
@@ -72,9 +129,17 @@ def derive_title_from_user_prompt(text: str | None) -> str | None:
     Returns None when the prompt is empty, pure markup, or recognisably
     a tool-result continuation rather than a fresh user intent.
 
-    - Strips Claude Code's slash-command markup wrappers
-    - Strips leading triple-backtick fences (would show as code blocks)
-    - Trims to ``TITLE_MAX_LEN`` at a word boundary with an ellipsis
+    Pipeline:
+      1. Strip Claude Code's slash-command markup wrappers
+      2. Drop leading code-fence opener (would render as a code block)
+      3. Bail on tool-result / system continuation patterns
+      4. Pick the first non-empty line, strip leading bullet/quote chars
+      5. Strip leading slash-command (``/plan ...`` → ``...``); preserve
+         the command word when it's the entire prompt
+      6. Strip inline markdown markers (bold/italic/code)
+      7. Collapse whitespace, take the first sentence
+      8. Capitalise the leading letter when safe
+      9. Truncate at a word boundary with ``…`` if needed
     """
     if not text or not text.strip():
         return None
@@ -83,20 +148,46 @@ def derive_title_from_user_prompt(text: str | None) -> str | None:
     if not cleaned:
         return None
 
-    # Drop leading code-fence opener and continuation prompts.
     cleaned = _TRIPLE_FENCE_RE.sub("", cleaned)
 
-    # Skip pure tool-result follow-ups (heuristic).
     lstripped = cleaned.lstrip()
     if lstripped.startswith(("[Continuing", "[Tool result", "[System")):
         return None
 
-    # Take the first non-empty line.
+    # First non-empty line. Markdown emphasis is stripped BEFORE the
+    # leading-punctuation pass so `**Critical**: ...` becomes
+    # `Critical: ...` instead of `Critical**: ...` (the leading-`*` strip
+    # would otherwise cut into the markdown bold pair).
+    line: str | None = None
     for raw_line in cleaned.splitlines():
-        line = _LEADING_PUNCT_RE.sub("", raw_line).strip()
-        if line:
-            return _truncate_at_word(line, TITLE_MAX_LEN)
-    return None
+        candidate = _strip_markdown_inline(raw_line)
+        candidate = _LEADING_PUNCT_RE.sub("", candidate).strip()
+        if candidate:
+            line = candidate
+            break
+    if line is None:
+        return None
+
+    # Strip leading slash-command. Preserve when it's the entire prompt
+    # (e.g. just `/help` with no arguments → fall back to the cmd name).
+    slash_match = _LEADING_SLASH_CMD_RE.match(line)
+    if slash_match:
+        cmd = slash_match.group(1)
+        remainder = line[slash_match.end() :].strip()
+        if remainder:
+            line = remainder
+        elif cmd.lower() in _GENERIC_SLASH_CMDS:
+            line = f"/{cmd}"
+        else:
+            line = f"/{cmd}"
+
+    line = _WHITESPACE_RE.sub(" ", line).strip()
+    if not line:
+        return None
+
+    line = _first_sentence(line, TITLE_MAX_LEN)
+    line = _sentence_case(line)
+    return _truncate_at_word(line, TITLE_MAX_LEN)
 
 
 def _truncate_at_word(text: str, max_len: int) -> str:
@@ -220,3 +311,63 @@ def generate_nickname(session_id: str) -> str:
     # Use bytes 2-3 (big-endian uint16) modulo 10000 for the suffix.
     num = int.from_bytes(h[2:4], "big") % 10000
     return f"{a}-{n}-{num:04d}"
+
+
+# ────────────────────────── startup backfill ──────────────────────────
+
+
+def backfill_titles(conn: Any) -> int:
+    """Re-derive titles for sessions whose title_source='user_prompt'.
+
+    Idempotent: only UPDATEs rows where the freshly-derived title differs
+    from what's already stored, so a startup pass that finds nothing
+    out-of-date is cheap.
+
+    The original prompt text isn't on the sessions row — it lives in the
+    earliest ``UserPromptSubmit`` event's ``payload_json``. We use that as
+    the source of truth so improvements to ``derive_title_from_user_prompt``
+    propagate to existing sessions without re-running the receiver.
+
+    Returns the count of rows that were actually updated.
+    """
+    sessions = conn.execute(
+        "SELECT session_id, title FROM sessions WHERE title_source = 'user_prompt'"
+    ).fetchall()
+
+    changed = 0
+    for session_id, current_title in sessions:
+        prompt = _earliest_user_prompt(conn, session_id)
+        if prompt is None:
+            continue
+        new_title = derive_title_from_user_prompt(prompt)
+        if new_title and new_title != current_title:
+            conn.execute(
+                "UPDATE sessions SET title = ? WHERE session_id = ?",
+                (new_title, session_id),
+            )
+            changed += 1
+
+    if changed:
+        _log.info("backfill_titles: re-derived %d session title(s)", changed)
+    return changed
+
+
+def _earliest_user_prompt(conn: Any, session_id: str) -> str | None:
+    """Return the ``prompt`` text from the first UserPromptSubmit event
+    for ``session_id``, or None if the event is missing/malformed."""
+    row = conn.execute(
+        "SELECT payload_json FROM events "
+        "WHERE session_id = ? AND event_name = 'UserPromptSubmit' "
+        "ORDER BY received_at LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    try:
+        payload = json.loads(row[0])
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    prompt = payload.get("prompt")
+    return prompt if isinstance(prompt, str) else None

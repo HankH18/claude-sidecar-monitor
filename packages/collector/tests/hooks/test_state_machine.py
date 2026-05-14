@@ -271,7 +271,8 @@ def test_user_prompt_submit_derives_title(db: object) -> None:
     title, source = db.execute(  # type: ignore[attr-defined]
         "SELECT title, title_source FROM sessions WHERE session_id=?", (SID,)
     ).fetchone()
-    assert title == "debug the failing test in foo_test.py"
+    # V3 — derive_title_from_user_prompt sentence-cases the first letter.
+    assert title == "Debug the failing test in foo_test.py"
     assert source == "user_prompt"
 
 
@@ -284,7 +285,7 @@ def test_user_prompt_submit_doesnt_overwrite_existing_title(db: object) -> None:
     title = db.execute(  # type: ignore[attr-defined]
         "SELECT title FROM sessions WHERE session_id=?", (SID,)
     ).fetchone()[0]
-    assert title == "initial intent"
+    assert title == "Initial intent"  # V3 sentence-cased
 
 
 def test_user_prompt_submit_skips_empty_prompts(db: object) -> None:

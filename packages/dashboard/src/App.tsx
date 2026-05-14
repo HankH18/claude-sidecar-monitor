@@ -14,6 +14,8 @@ import Tokens from "./pages/Tokens";
 /**
  * Bottom-navigation tab. py-3.5 + min-h-12 keeps the tap target ≥44pt per
  * Apple HIG; the focus-visible ring is provided globally in `theme.css`.
+ *
+ * Active tab gets a teal underline + ink text; inactive sits in muted ink.
  */
 function NavTab({ to, label }: { to: string; label: string }) {
   return (
@@ -23,8 +25,8 @@ function NavTab({ to, label }: { to: string; label: string }) {
       className={({ isActive }) =>
         `flex-1 inline-flex items-center justify-center min-h-12 py-3.5 text-sm font-medium transition-colors ${
           isActive
-            ? "text-emerald-300 border-b-2 border-emerald-400"
-            : "text-zinc-400 hover:text-zinc-200 border-b-2 border-transparent"
+            ? "text-ink border-b-2 border-teal"
+            : "text-ink-muted hover:text-ink border-b-2 border-transparent"
         }`
       }
     >
@@ -33,26 +35,36 @@ function NavTab({ to, label }: { to: string; label: string }) {
   );
 }
 
+/**
+ * Tiny stylized "S" logomark — three stacked rectangles in the CTA orange.
+ * Inline SVG keeps it asset-free and matches the wordmark color.
+ */
+function Logomark() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" className="shrink-0">
+      <rect x="2" y="2.5" width="12" height="3" rx="0.8" fill="var(--csm-orange)" />
+      <rect x="4" y="6.5" width="8" height="3" rx="0.8" fill="var(--csm-orange)" opacity="0.85" />
+      <rect x="2" y="10.5" width="12" height="3" rx="0.8" fill="var(--csm-orange)" opacity="0.7" />
+    </svg>
+  );
+}
+
 export default function App() {
   return (
     <ToastProvider>
       <div className="min-h-dvh flex flex-col">
-        <header className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 pt-safe">
+        <header className="sticky top-0 z-10 bg-titlebar/95 backdrop-blur border-b border-line pt-safe">
           <div className="px-4 py-3 flex items-center justify-between gap-3">
             <Link
               to="/"
-              className="font-semibold text-zinc-100 inline-flex items-center gap-2 min-h-11 -my-1.5"
+              className="font-semibold text-ink inline-flex items-center gap-2 min-h-11 -my-1.5 text-base"
             >
-              {/*
-                Round 2: dropped the always-emerald brand dot — it duplicated
-                the ConnectionStatus indicator next to it and confused users
-                when offline (green dot + red dot side-by-side).
-              */}
+              <Logomark />
               <span>Sidecar</span>
             </Link>
             <ConnectionStatus />
           </div>
-          <nav className="flex border-t border-zinc-800" aria-label="primary">
+          <nav className="flex border-t border-line" aria-label="primary">
             <NavTab to="/" label="Live" />
             <NavTab to="/tokens" label="Tokens" />
             <NavTab to="/settings" label="Settings" />
@@ -79,11 +91,11 @@ export default function App() {
 
 function NotFound() {
   return (
-    <div className="text-zinc-500 text-sm py-12 text-center space-y-3">
+    <div className="text-ink-muted text-sm py-12 text-center space-y-3">
       <p>Page not found.</p>
       <Link
         to="/"
-        className="inline-flex items-center justify-center min-h-11 px-4 rounded-md bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/40 hover:bg-emerald-500/25"
+        className="inline-flex items-center justify-center min-h-11 px-4 rounded-md bg-cta text-white font-medium shadow-[0_1px_0_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.25)] hover:bg-cta-hover active:translate-y-px"
       >
         Back to Live
       </Link>

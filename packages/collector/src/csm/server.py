@@ -77,6 +77,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     cleanup_stale_pending(app.state.db)
 
+    # V3.A — re-derive session titles using the current
+    # `derive_title_from_user_prompt` heuristic. Idempotent: only writes
+    # rows whose stored title actually differs from what we'd produce
+    # now, so improvements to the heuristic propagate to historical
+    # sessions without an explicit `csm reindex` step.
+    from csm.identity import backfill_titles
+
+    backfill_titles(app.state.db)
+
     # JSONL watcher (T7): catch up + tail Claude Code transcripts.
     from csm.jsonl import JsonlWatcher
 

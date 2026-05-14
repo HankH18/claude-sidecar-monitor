@@ -19,9 +19,9 @@ export function formatTokens(n: number): string {
 /**
  * Compact token display with three explicit levels of typographic emphasis:
  *
- *   1. PRIMARY — input tokens (the cost driver) at text-sm, brighter zinc-100.
- *   2. SECONDARY — output tokens at text-xs, dimmer zinc-400.
- *   3. TERTIARY — cache read/write at text-[10px], faintest zinc-500.
+ *   1. PRIMARY — input tokens (the cost driver) at text-sm, ink color.
+ *   2. SECONDARY — output tokens at text-xs, muted ink.
+ *   3. TERTIARY — cache read/write at text-[10px], subtle ink.
  *
  * The eye should land on the state pill first, agent_type second, and only
  * then absorb the token magnitude — keeping `text-sm` here (not text-base)
@@ -41,22 +41,22 @@ export default function TokenBadge({
       aria-label={`tokens: ${input} input, ${output} output, ${cacheRead} cache read, ${cacheWrite} cache write`}
     >
       <div>
-        <span className="text-sm text-zinc-100" title="input tokens">
+        <span className="text-sm text-ink" title="input tokens">
           {formatTokens(input)}
         </span>
-        <span className="text-zinc-700 mx-1" aria-hidden="true">
+        <span className="text-ink-subtle mx-1" aria-hidden="true">
           ·
         </span>
-        <span className="text-xs text-zinc-400" title="output tokens">
+        <span className="text-xs text-ink-muted" title="output tokens">
           {formatTokens(output)}
         </span>
       </div>
       {showCache ? (
-        <div className="text-[10px] text-zinc-500">
+        <div className="text-[10px] text-ink-subtle">
           <span title="cache read">cr {formatTokens(cacheRead)}</span>
           {cacheWrite > 0 ? (
             <>
-              <span className="text-zinc-700 mx-1" aria-hidden="true">
+              <span className="text-ink-subtle mx-1" aria-hidden="true">
                 ·
               </span>
               <span title="cache write">cw {formatTokens(cacheWrite)}</span>

@@ -25,7 +25,7 @@ export default function PullToRefreshIndicator({ pull, armed, refreshing, classN
   return (
     <output
       aria-live="polite"
-      className={`block text-center text-[11px] text-zinc-400 select-none pointer-events-none ${className}`}
+      className={`block text-center text-[11px] text-ink-muted select-none pointer-events-none ${className}`}
       style={{
         transform: `translateY(${ty - 28}px)`,
         opacity,
@@ -36,7 +36,7 @@ export default function PullToRefreshIndicator({ pull, armed, refreshing, classN
       <span className="inline-flex items-center gap-1.5">
         <span
           aria-hidden="true"
-          className={`inline-block w-2 h-2 rounded-full bg-emerald-400 ${
+          className={`inline-block w-2 h-2 rounded-full bg-teal ${
             refreshing ? "animate-pulse" : ""
           }`}
         />

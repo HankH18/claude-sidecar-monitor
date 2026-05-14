@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from sse_starlette.sse import EventSourceResponse
 
 from csm.api.models import (
+    DashboardKpis,
     ModelTokens,
     SessionDetail,
     Settings,
@@ -25,6 +26,7 @@ from csm.api.models import (
 from csm.api.permissions import router as _permissions_router
 from csm.api.queries import (
     daily_totals,
+    dashboard_kpis,
     get_session,
     get_settings_dict,
     latest_event_at,
@@ -62,6 +64,21 @@ async def get_state(request: Request) -> StateSnapshot:
         settings=settings,
         last_event_at=last_evt,
     )
+
+
+# ────────────────────── /api/dashboard ──────────────────────
+
+
+@router.get("/api/dashboard", response_model=DashboardKpis)
+async def get_dashboard(request: Request) -> DashboardKpis:
+    """V3 KPI rollup for the metrics landing page.
+
+    All component queries are independent SELECTs; total wire size is
+    small and the queries are short-lived. The dashboard refetches on
+    relevant SSE bus kinds (`session_update`, `events`).
+    """
+    db = _db(request)
+    return await asyncio.to_thread(dashboard_kpis, db)
 
 
 # ────────────────────── /api/sessions ──────────────────────

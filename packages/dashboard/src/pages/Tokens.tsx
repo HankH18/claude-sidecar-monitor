@@ -4,6 +4,7 @@ import type { TokensResponse } from "../api/types";
 import EmptyState from "../components/EmptyState";
 import PullToRefreshIndicator from "../components/PullToRefreshIndicator";
 import { formatTokens } from "../components/TokenBadge";
+import Window from "../components/Window";
 import { usePullToRefresh } from "../hooks/usePullToRefresh";
 import { useTokens } from "../hooks/useTokens";
 
@@ -29,14 +30,17 @@ function buildBuckets(daily: TokensResponse["dailyTotals"]): DayBucket[] {
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+// Warm palette versions of the model colors. We want every model
+// distinguishable on the beige canvas without the neon look the old
+// emerald/blue/slate palette had.
 const MODEL_COLORS: Record<string, string> = {
-  "claude-opus-4-7": "#10b981", // emerald
-  "claude-sonnet-4-5": "#3b82f6", // blue
-  unknown: "#64748b", // slate
+  "claude-opus-4-7": "#ee5d36", // CTA orange — the heaviest model = warmest accent
+  "claude-sonnet-4-5": "#4a73b0", // info blue
+  unknown: "#a39a82", // border-strong (warm gray)
 };
 
 function colorFor(model: string): string {
-  return MODEL_COLORS[model] ?? "#a78bfa";
+  return MODEL_COLORS[model] ?? "#5fb3a1"; // teal fallback for novel models
 }
 
 function StackedBarChart({ daily }: { daily: TokensResponse["dailyTotals"] }) {
@@ -95,7 +99,7 @@ function StackedBarChart({ daily }: { daily: TokensResponse["dailyTotals"] }) {
                   x={x}
                   y={height - 4}
                   fontSize="8"
-                  fill="#71717a"
+                  fill="#6b6555"
                   textAnchor={i === 0 ? "start" : "end"}
                 >
                   {b.date.slice(5)}
@@ -105,7 +109,7 @@ function StackedBarChart({ daily }: { daily: TokensResponse["dailyTotals"] }) {
           );
         })}
       </svg>
-      <figcaption className="flex flex-wrap gap-3 text-[10px] text-zinc-500 mt-2">
+      <figcaption className="flex flex-wrap gap-3 text-[10px] text-ink-muted mt-2">
         {models.map((m) => (
           <span key={m} className="inline-flex items-center gap-1">
             <span
@@ -145,9 +149,9 @@ function TodaySparkline({ daily }: { daily: TokensResponse["dailyTotals"] }) {
 
   if (totals.length < 2) return null;
 
-  // Color: green if <=85% of avg, red if >=115%, amber otherwise.
+  // Color: warm-good if <=85% of avg, warm-bad if >=115%, warn otherwise.
   const ratio = avg > 0 ? today / avg : 1;
-  const color = ratio <= 0.85 ? "#34d399" : ratio >= 1.15 ? "#f87171" : "#fbbf24";
+  const color = ratio <= 0.85 ? "#4a8a52" : ratio >= 1.15 ? "#c44a47" : "#d9963a";
   const label = ratio <= 0.85 ? "below avg" : ratio >= 1.15 ? "above avg" : "near avg";
 
   // Build a tiny SVG polyline.
@@ -182,7 +186,7 @@ function TodaySparkline({ daily }: { daily: TokensResponse["dailyTotals"] }) {
           strokeWidth={1.5}
           strokeLinejoin="round"
           strokeLinecap="round"
-          opacity={0.85}
+          opacity={0.9}
         />
         <circle cx={lastX} cy={lastY} r={2.2} fill={color} />
       </svg>
@@ -201,12 +205,12 @@ export default function Tokens() {
     return (
       <div className="space-y-5" aria-busy="true">
         <div className="space-y-2">
-          <div className="h-5 w-24 rounded bg-zinc-800/60 animate-pulse" />
-          <div className="h-3 w-56 rounded bg-zinc-800/40 animate-pulse" />
+          <div className="h-6 w-24 rounded bg-line/60 animate-pulse" />
+          <div className="h-3 w-56 rounded bg-line/40 animate-pulse" />
         </div>
-        <div className="h-3 w-32 rounded bg-zinc-800/40 animate-pulse" />
-        <div className="h-32 rounded-md bg-zinc-800/40 animate-pulse" />
-        <div className="h-32 rounded-md bg-zinc-800/40 animate-pulse" />
+        <div className="h-3 w-32 rounded bg-line/40 animate-pulse" />
+        <div className="h-32 rounded-md bg-line/40 animate-pulse" />
+        <div className="h-32 rounded-md bg-line/40 animate-pulse" />
       </div>
     );
   }
@@ -222,10 +226,10 @@ export default function Tokens() {
       <PullToRefreshIndicator pull={ptr.pull} armed={ptr.armed} refreshing={ptr.refreshing} />
       <header className="space-y-1">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h1 className="text-lg font-semibold text-zinc-100">Tokens</h1>
+          <h1 className="text-2xl font-semibold text-ink leading-tight">Tokens</h1>
           {data.dailyTotals.length > 0 ? <TodaySparkline daily={data.dailyTotals} /> : null}
         </div>
-        <p className="text-[11px] text-zinc-500">
+        <p className="text-[11px] text-ink-muted">
           Absolute counts; reflects API-reported usage, not billing.
         </p>
       </header>
@@ -233,120 +237,132 @@ export default function Tokens() {
       {!hasAny ? (
         <EmptyState
           illustration="tokens"
-          title="No token usage yet"
-          message="Once an agent makes its first API call, totals roll up here. Token data first appears after a session has had at least one assistant turn."
+          title="No usage logged yet"
+          message="Once an agent burns some tokens, you'll see them here."
         />
       ) : null}
 
       {data.topSessions.length > 0 ? (
-        <section aria-label="top sessions last 24h" className="space-y-2">
-          <h2 className="text-xs uppercase tracking-wide text-zinc-500">Top sessions (last 24h)</h2>
-          <ul className="divide-y divide-zinc-800 rounded-md border border-zinc-800 overflow-hidden">
-            {data.topSessions.map((s) => (
-              <li key={s.session_id}>
-                <Link
-                  to={`/sessions/${s.session_id}`}
-                  className="flex items-center justify-between gap-3 px-3 py-3 min-h-12 hover:bg-zinc-900/60"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm text-zinc-100 truncate">
-                      {s.agent_type ?? "session"} · {s.project_label ?? s.worktree_root}
+        <section aria-label="top sessions last 24h">
+          <h2 className="sr-only">Top sessions (last 24h)</h2>
+          <Window icon="tokens" title="Top sessions (last 24h)" bodyClassName="p-0">
+            <ul className="divide-y divide-line">
+              {data.topSessions.map((s) => (
+                <li key={s.session_id}>
+                  <Link
+                    to={`/sessions/${s.session_id}`}
+                    className="flex items-center justify-between gap-3 px-3 py-3 min-h-12 hover:bg-surface-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm text-ink truncate">
+                        {s.agent_type ?? "session"} · {s.project_label ?? s.worktree_root}
+                      </div>
+                      <div className="text-[11px] text-ink-muted truncate mt-0.5">
+                        {s.primary_model ?? "—"}
+                      </div>
                     </div>
-                    <div className="text-[11px] text-zinc-500 truncate mt-0.5">
-                      {s.primary_model ?? "—"}
+                    <div className="text-right font-mono tabular-nums text-xs text-ink shrink-0">
+                      {formatTokens(s.input + s.output)}
+                      <div className="text-[10px] text-ink-muted">
+                        cr {formatTokens(s.cache_read)}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right font-mono tabular-nums text-xs text-zinc-100 shrink-0">
-                    {formatTokens(s.input + s.output)}
-                    <div className="text-[10px] text-zinc-500">cr {formatTokens(s.cache_read)}</div>
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Window>
         </section>
       ) : null}
 
       {data.topProjects.length > 0 ? (
-        <section aria-label="top projects all time" className="space-y-2">
-          <h2 className="text-xs uppercase tracking-wide text-zinc-500">Top projects (all time)</h2>
-          <ul className="divide-y divide-zinc-800 rounded-md border border-zinc-800 overflow-hidden">
-            {data.topProjects.map((p) => (
-              <li key={p.worktree_root}>
-                <Link
-                  to={`/projects/${encodeURIComponent(p.worktree_root)}`}
-                  className="flex items-center justify-between gap-3 px-3 py-3 min-h-12 hover:bg-zinc-900/60"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm text-zinc-100 truncate">
-                      {p.project_label ?? p.worktree_root}
+        <section aria-label="top projects all time">
+          <h2 className="sr-only">Top projects (all time)</h2>
+          <Window icon="doc" title="Top projects (all time)" bodyClassName="p-0">
+            <ul className="divide-y divide-line">
+              {data.topProjects.map((p) => (
+                <li key={p.worktree_root}>
+                  <Link
+                    to={`/projects/${encodeURIComponent(p.worktree_root)}`}
+                    className="flex items-center justify-between gap-3 px-3 py-3 min-h-12 hover:bg-surface-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm text-ink truncate">
+                        {p.project_label ?? p.worktree_root}
+                      </div>
+                      <div className="text-[11px] text-ink-muted truncate mt-0.5">
+                        {(p as { session_count?: number }).session_count ?? 0} session
+                        {(p as { session_count?: number }).session_count === 1 ? "" : "s"}
+                      </div>
                     </div>
-                    <div className="text-[11px] text-zinc-500 truncate mt-0.5">
-                      {(p as { session_count?: number }).session_count ?? 0} session
-                      {(p as { session_count?: number }).session_count === 1 ? "" : "s"}
+                    <div className="text-right font-mono tabular-nums text-xs text-ink shrink-0">
+                      {formatTokens(p.input + p.output)}
+                      <div className="text-[10px] text-ink-muted">
+                        cr {formatTokens(p.cache_read)}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right font-mono tabular-nums text-xs text-zinc-100 shrink-0">
-                    {formatTokens(p.input + p.output)}
-                    <div className="text-[10px] text-zinc-500">cr {formatTokens(p.cache_read)}</div>
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Window>
         </section>
       ) : null}
 
       {data.totalsByModel.length > 0 ? (
-        <section aria-label="totals by model" className="space-y-2">
-          <h2 className="text-xs uppercase tracking-wide text-zinc-500">By model</h2>
-          <div className="rounded-md border border-zinc-800 overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="text-[10px] uppercase text-zinc-500">
-                <tr>
-                  <th className="text-left px-3 py-2">model</th>
-                  <th className="text-right px-3 py-2">input</th>
-                  <th className="text-right px-3 py-2">output</th>
-                  <th className="text-right px-3 py-2 text-zinc-600">cr</th>
-                  <th className="text-right px-3 py-2 text-zinc-600">cw</th>
-                </tr>
-              </thead>
-              <tbody className="font-mono tabular-nums">
-                {data.totalsByModel.map((m) => (
-                  <tr key={m.model} className="border-t border-zinc-800">
-                    <td className="px-3 py-2 text-zinc-100">{m.model}</td>
-                    <td className="px-3 py-2 text-right">{formatTokens(m.input)}</td>
-                    <td className="px-3 py-2 text-right">{formatTokens(m.output)}</td>
-                    <td className="px-3 py-2 text-right text-zinc-500">
-                      {formatTokens(m.cache_read)}
-                    </td>
-                    <td className="px-3 py-2 text-right text-zinc-500">
-                      {formatTokens(m.cache_write)}
-                    </td>
+        <section aria-label="totals by model">
+          <h2 className="sr-only">By model</h2>
+          <Window icon="tokens" title="By model" bodyClassName="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-[10px] uppercase text-ink-muted bg-surface-2">
+                  <tr>
+                    <th className="text-left px-3 py-2">model</th>
+                    <th className="text-right px-3 py-2">input</th>
+                    <th className="text-right px-3 py-2">output</th>
+                    <th className="text-right px-3 py-2 text-ink-subtle">cr</th>
+                    <th className="text-right px-3 py-2 text-ink-subtle">cw</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="font-mono tabular-nums">
+                  {data.totalsByModel.map((m) => (
+                    <tr key={m.model} className="border-t border-line">
+                      <td className="px-3 py-2 text-ink">{m.model}</td>
+                      <td className="px-3 py-2 text-right text-ink">{formatTokens(m.input)}</td>
+                      <td className="px-3 py-2 text-right text-ink">{formatTokens(m.output)}</td>
+                      <td className="px-3 py-2 text-right text-ink-muted">
+                        {formatTokens(m.cache_read)}
+                      </td>
+                      <td className="px-3 py-2 text-right text-ink-muted">
+                        {formatTokens(m.cache_write)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Window>
         </section>
       ) : null}
 
-      <section aria-label="daily totals chart" className="space-y-2">
-        <h2 className="text-xs uppercase tracking-wide text-zinc-500">Daily totals (14 days)</h2>
-        {data.dailyTotals.length > 0 ? (
-          <StackedBarChart daily={data.dailyTotals} />
-        ) : (
-          <p className="text-xs text-zinc-600 px-1">No daily totals available yet.</p>
-        )}
+      <section aria-label="daily totals chart">
+        <h2 className="sr-only">Daily totals (14 days)</h2>
+        <Window icon="tokens" title="Daily totals (14 days)">
+          {data.dailyTotals.length > 0 ? (
+            <StackedBarChart daily={data.dailyTotals} />
+          ) : (
+            <p className="text-xs text-ink-muted">No daily totals available yet.</p>
+          )}
+        </Window>
       </section>
 
-      <p className="text-[11px] text-zinc-500 leading-relaxed border-t border-zinc-800 pt-4">
+      <p className="text-[11px] text-ink-muted leading-relaxed border-t border-line pt-4">
         csm reports per-message API usage. For monthly billing limits, see your{" "}
         <a
           href="https://console.anthropic.com/"
           target="_blank"
           rel="noreferrer"
-          className="text-zinc-400 hover:text-zinc-200 underline"
+          className="text-teal hover:text-cta underline"
         >
           Anthropic account
         </a>

@@ -1,11 +1,11 @@
 @import "tailwindcss";
 @import "./theme.css";
 
-/* Dark by default; tailwind's dark variant follows the html.dark class. */
-@variant dark (.dark &);
+/* Light theme only — the PostHog-inspired warm beige canvas is the only
+   theme we ship. The previous dark variant has been retired; no toggle. */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html,
@@ -14,11 +14,20 @@ body,
   height: 100%;
 }
 
+/*
+ * Body uses the warm beige canvas color plus a subtle inline-SVG noise
+ * overlay so the surface reads like grainy paper instead of flat paint.
+ * The SVG (≈1.4KB) tiles a 160×160 patch of feTurbulence-derived dots at
+ * very low opacity — a small payoff for a very small payload. No external
+ * asset fetch.
+ */
 body {
-  background: var(--color-bg);
-  color: var(--color-text);
+  background-color: var(--csm-bg);
+  background-image: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22160%22%20height%3D%22160%22%3E%3Cfilter%20id%3D%22n%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.9%22%20numOctaves%3D%222%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20values%3D%220%200%200%200%200.12%200%200%200%200%200.10%200%200%200%200%200.06%200%200%200%200.55%200%22%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23n)%22%20opacity%3D%220.07%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: repeat;
+  color: var(--csm-text);
   -webkit-font-smoothing: antialiased;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", system-ui,
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
     sans-serif;
 }
 

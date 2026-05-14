@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 
 /**
  * Friendly empty-state card. A small inline SVG illustration + headline + a
- * one-sentence next step. No external icon dependency — the SVGs are tuned
- * to the dark palette (uses `currentColor` so the parent class controls hue).
+ * one-sentence next step. No external icon dependency — the SVGs use
+ * `currentColor` so the parent class controls hue (we set a muted ink tone).
  *
  * Pass `illustration="agents" | "transcript" | "tokens"` to pick a relevant
  * vector; or pass your own ReactNode via `illustration={<svg…/>}`.
@@ -33,13 +33,13 @@ export default function EmptyState({
   );
   return (
     <output
-      className={`flex flex-col items-center justify-center text-center gap-3 py-10 px-6 rounded-md border border-dashed border-zinc-800 bg-zinc-900/30 ${className}`}
+      className={`flex flex-col items-center justify-center text-center gap-3 py-10 px-6 rounded-md border border-dashed border-line bg-surface-2/60 ${className}`}
     >
-      <span className="text-zinc-500 block" aria-hidden="true">
+      <span className="text-ink-subtle block" aria-hidden="true">
         {art}
       </span>
-      <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
-      <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">{message}</p>
+      <h3 className="text-sm font-semibold text-ink">{title}</h3>
+      <p className="text-xs text-ink-muted max-w-xs leading-relaxed">{message}</p>
       {action ? <span className="block mt-1">{action}</span> : null}
     </output>
   );

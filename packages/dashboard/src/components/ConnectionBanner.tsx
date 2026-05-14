@@ -83,7 +83,7 @@ export default function ConnectionBanner() {
     <div
       role="alert"
       aria-live="polite"
-      className="sticky top-[88px] z-[5] mx-3 my-2 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-200 text-xs px-3 py-2 flex items-center justify-between gap-2"
+      className="sticky top-[88px] z-[5] mx-3 my-2 rounded-md border border-warn/40 bg-warn/10 text-warn text-xs px-3 py-2 flex items-center justify-between gap-2"
       data-testid="connection-banner"
     >
       <span className="truncate">{verb} to collector. Stream is paused — data may be stale.</span>
@@ -92,7 +92,7 @@ export default function ConnectionBanner() {
         onClick={() => {
           if (typeof window !== "undefined") window.location.reload();
         }}
-        className="shrink-0 inline-flex items-center justify-center min-h-9 px-3 rounded border border-amber-500/50 hover:bg-amber-500/20 text-amber-100 text-[11px] font-medium"
+        className="shrink-0 inline-flex items-center justify-center min-h-9 px-3 rounded border border-warn/50 hover:bg-warn/15 text-warn text-[11px] font-medium active:translate-y-px"
       >
         Retry now
       </button>

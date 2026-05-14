@@ -138,11 +138,11 @@ export function useToasts(): Toast[] {
 function variantClasses(v: ToastVariant): string {
   switch (v) {
     case "success":
-      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+      return "border-good/40 bg-good/10 text-good";
     case "error":
-      return "border-red-500/50 bg-red-500/10 text-red-200";
+      return "border-bad/50 bg-bad/10 text-bad";
     case "info":
-      return "border-zinc-700 bg-zinc-900/95 text-zinc-100";
+      return "border-line bg-surface text-ink";
   }
 }
 

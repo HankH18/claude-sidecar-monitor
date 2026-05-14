@@ -64,8 +64,8 @@ export default function TreeRow({ node, style }: NodeRendererProps<TreeRowData>)
       aria-expanded={hasChildren ? node.isOpen : undefined}
       data-virtual={isVirtual ? "true" : "false"}
       style={style}
-      className={`flex flex-col justify-center gap-0.5 pr-2 hover:bg-zinc-900/60 cursor-pointer text-xs rounded-sm ${
-        isVirtual ? "border-l border-dashed border-zinc-700/80 pl-0.5" : ""
+      className={`flex flex-col justify-center gap-0.5 pr-2 hover:bg-surface-2 cursor-pointer text-xs rounded-sm ${
+        isVirtual ? "border-l border-dashed border-line-strong/70 pl-0.5" : ""
       }`}
       onClick={() => {
         if (hasChildren) node.toggle();
@@ -83,7 +83,7 @@ export default function TreeRow({ node, style }: NodeRendererProps<TreeRowData>)
         <button
           type="button"
           aria-label={node.isOpen ? "collapse" : "expand"}
-          className={`shrink-0 inline-flex items-center justify-center w-8 text-zinc-500 hover:text-zinc-200 ${
+          className={`shrink-0 inline-flex items-center justify-center w-8 text-ink-subtle hover:text-ink ${
             hasChildren ? "" : "opacity-0 pointer-events-none"
           }`}
           tabIndex={hasChildren ? 0 : -1}
@@ -97,7 +97,7 @@ export default function TreeRow({ node, style }: NodeRendererProps<TreeRowData>)
         {isVirtual ? (
           <span
             aria-hidden="true"
-            className="shrink-0 text-zinc-500 font-mono text-[11px]"
+            className="shrink-0 text-ink-subtle font-mono text-[11px]"
             title="virtual subagent"
           >
             🜲
@@ -113,21 +113,21 @@ export default function TreeRow({ node, style }: NodeRendererProps<TreeRowData>)
         <SessionLabel
           session={session}
           fallback={isVirtual ? (apiNode.description ?? data.name) : data.name}
-          className="flex-1 min-w-0 truncate text-zinc-200"
+          className="flex-1 min-w-0 truncate text-ink"
         />
         {!isVirtual && session.last_tool_name ? (
-          <span className="text-zinc-500 shrink-0">· {session.last_tool_name}</span>
+          <span className="text-ink-muted shrink-0">· {session.last_tool_name}</span>
         ) : null}
         {!isVirtual ? (
-          <span className="text-zinc-500 hidden sm:inline shrink-0">
+          <span className="text-ink-muted hidden sm:inline shrink-0">
             <ElapsedClock since={session.started_at} live={live} />
           </span>
         ) : null}
         {!isVirtual ? (
           <span className="text-right tabular-nums font-mono ml-1 leading-tight shrink-0">
-            <span className="text-zinc-300">self {formatTokens(ownTotal)}</span>
+            <span className="text-ink">self {formatTokens(ownTotal)}</span>
             {hasChildren ? (
-              <span className="block text-[10px] text-zinc-500">
+              <span className="block text-[10px] text-ink-subtle">
                 subtree {formatTokens(subTotal)}
               </span>
             ) : null}
@@ -143,7 +143,7 @@ export default function TreeRow({ node, style }: NodeRendererProps<TreeRowData>)
           className="pl-9"
         />
       ) : apiNode.description ? (
-        <p className="pl-9 text-[11px] text-zinc-500 truncate">{apiNode.description}</p>
+        <p className="pl-9 text-[11px] text-ink-subtle truncate">{apiNode.description}</p>
       ) : null}
     </div>
   );

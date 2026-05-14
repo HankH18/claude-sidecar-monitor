@@ -19,6 +19,7 @@ import EmptyState from "../components/EmptyState";
 import SessionLabel from "../components/SessionLabel";
 import StatePill from "../components/StatePill";
 import TokenBadge from "../components/TokenBadge";
+import Window from "../components/Window";
 
 interface RawTranscriptMessage {
   message_id: number;
@@ -104,7 +105,7 @@ function CopyButton({ text }: { text: string }) {
           // Clipboard may not be available (test env). Silently fail.
         }
       }}
-      className="inline-flex items-center justify-center min-h-9 min-w-11 px-2 text-[11px] text-zinc-400 hover:text-zinc-100 rounded border border-zinc-800 hover:bg-zinc-800/60"
+      className="inline-flex items-center justify-center min-h-9 min-w-11 px-2 text-[11px] text-ink-muted hover:text-ink rounded border border-line hover:bg-surface-2"
       aria-label={copied ? "copied" : "copy message"}
     >
       {copied ? "copied" : "copy"}
@@ -114,7 +115,7 @@ function CopyButton({ text }: { text: string }) {
 
 function TimelineStrip({ entries }: { entries: TimelineEntry[] }) {
   if (entries.length === 0) {
-    return <p className="text-[11px] text-zinc-600 px-1">No events yet.</p>;
+    return <p className="text-[11px] text-ink-muted px-1">No events yet.</p>;
   }
   return (
     <div className="overflow-x-auto -mx-1 px-1" aria-label="event timeline">
@@ -123,10 +124,10 @@ function TimelineStrip({ entries }: { entries: TimelineEntry[] }) {
           const isPre = e.event_name === "PreToolUse";
           const isPost = e.event_name === "PostToolUse";
           const color = isPre
-            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+            ? "bg-good/15 text-good border-good/40"
             : isPost
-              ? "bg-blue-500/15 text-blue-300 border-blue-500/40"
-              : "bg-zinc-800/60 text-zinc-300 border-zinc-700";
+              ? "bg-info/15 text-info border-info/40"
+              : "bg-surface-2 text-ink-muted border-line";
           return (
             <li
               key={e.event_id}
@@ -150,10 +151,10 @@ function TimelineStrip({ entries }: { entries: TimelineEntry[] }) {
 
 function MessageBlock({ m }: { m: TranscriptMessage }) {
   const roleColor = {
-    user: "border-emerald-500/40 bg-emerald-500/5",
-    assistant: "border-zinc-700 bg-zinc-900/60",
-    tool_result: "border-blue-500/30 bg-blue-500/5",
-    system: "border-yellow-500/30 bg-yellow-500/5",
+    user: "border-teal/40 bg-teal-soft/40",
+    assistant: "border-line bg-surface",
+    tool_result: "border-info/30 bg-info/5",
+    system: "border-warn/30 bg-warn/5",
   }[m.role];
 
   const isToolIO = m.role === "tool_result" || (m.role === "assistant" && m.tool_name);
@@ -165,7 +166,7 @@ function MessageBlock({ m }: { m: TranscriptMessage }) {
       data-role={m.role}
       data-testid="transcript-message"
     >
-      <header className="flex items-center justify-between text-[10px] uppercase tracking-wide text-zinc-500">
+      <header className="flex items-center justify-between text-[10px] uppercase tracking-wide text-ink-muted">
         <span>
           {m.role}
           {m.tool_name ? ` · ${m.tool_name}` : ""}
@@ -179,7 +180,7 @@ function MessageBlock({ m }: { m: TranscriptMessage }) {
       {isToolIO ? (
         <DiffViewer toolName={m.tool_name} content={m.content} collapsed={isReadResult} />
       ) : (
-        <p className="text-sm text-zinc-200 whitespace-pre-wrap">{m.content}</p>
+        <p className="text-sm text-ink whitespace-pre-wrap">{m.content}</p>
       )}
     </article>
   );
@@ -190,32 +191,32 @@ function SkeletonDetail() {
     <div className="space-y-4" aria-busy="true">
       {/* back link + title row */}
       <div className="space-y-2">
-        <div className="h-3 w-12 rounded bg-zinc-800/60 animate-pulse" />
+        <div className="h-3 w-12 rounded bg-line/60 animate-pulse" />
         <div className="flex items-center justify-between gap-2">
           <div className="space-y-1.5 flex-1">
-            <div className="h-5 w-32 rounded bg-zinc-800/60 animate-pulse" />
-            <div className="h-3 w-48 rounded bg-zinc-800/40 animate-pulse" />
+            <div className="h-5 w-32 rounded bg-line/60 animate-pulse" />
+            <div className="h-3 w-48 rounded bg-line/40 animate-pulse" />
           </div>
-          <div className="h-6 w-20 rounded-full bg-zinc-800/60 animate-pulse" />
+          <div className="h-6 w-20 rounded-full bg-line/60 animate-pulse" />
         </div>
         <div className="flex items-center justify-between">
-          <div className="h-3 w-12 rounded bg-zinc-800/40 animate-pulse" />
+          <div className="h-3 w-12 rounded bg-line/40 animate-pulse" />
           <div className="space-y-1">
-            <div className="h-3 w-20 rounded bg-zinc-800/60 animate-pulse" />
-            <div className="h-2 w-12 rounded bg-zinc-800/40 animate-pulse" />
+            <div className="h-3 w-20 rounded bg-line/60 animate-pulse" />
+            <div className="h-2 w-12 rounded bg-line/40 animate-pulse" />
           </div>
         </div>
       </div>
       {/* timeline */}
       <div className="flex gap-1 overflow-hidden">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="h-9 w-16 rounded bg-zinc-800/50 animate-pulse" />
+          <div key={i} className="h-9 w-16 rounded bg-line/50 animate-pulse" />
         ))}
       </div>
       {/* transcript blocks */}
       <div className="space-y-2">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="h-20 rounded-md bg-zinc-800/40 animate-pulse" />
+          <div key={i} className="h-20 rounded-md bg-line/40 animate-pulse" />
         ))}
       </div>
     </div>
@@ -291,7 +292,7 @@ export default function SessionDetail() {
   }, [id, mock]);
 
   if (!id) {
-    return <p className="text-sm text-zinc-500">No session id.</p>;
+    return <p className="text-sm text-ink-muted">No session id.</p>;
   }
 
   if (!mock && liveLoading) {
@@ -308,10 +309,10 @@ export default function SessionDetail() {
     if (!mock && liveError) {
       return (
         <div className="space-y-2">
-          <Link to="/" className="text-xs text-emerald-400 hover:underline">
+          <Link to="/" className="text-xs text-teal hover:text-cta hover:underline">
             ← back
           </Link>
-          <p className="text-sm text-red-400">Failed to load session: {liveError}</p>
+          <p className="text-sm text-bad">Failed to load session: {liveError}</p>
         </div>
       );
     }
@@ -319,11 +320,11 @@ export default function SessionDetail() {
       <div className="space-y-2">
         <Link
           to="/"
-          className="inline-flex items-center gap-1 min-h-11 -mx-1 px-1 text-xs text-emerald-300 hover:text-emerald-200"
+          className="inline-flex items-center gap-1 min-h-11 -mx-1 px-1 text-xs text-teal hover:text-cta"
         >
           <span aria-hidden="true">←</span> back
         </Link>
-        <p className="text-sm text-zinc-500">Session not found.</p>
+        <p className="text-sm text-ink-muted">Session not found.</p>
       </div>
     );
   }
@@ -359,58 +360,59 @@ export default function SessionDetail() {
         ]}
       />
 
-      <header className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-base font-semibold text-zinc-100 truncate inline-flex items-center gap-1.5">
-              <AgentKindIcon
-                kind={session.agent_kind ?? null}
-                confidence={session.agent_kind_confidence ?? null}
-                className="shrink-0"
-              />
-              <SessionLabel session={session} className="truncate" />
-            </h1>
-            <ActivityLine
-              summary={session.activity_summary ?? null}
-              updatedAt={session.activity_updated_at ?? null}
-              className="mt-0.5"
+      <Window
+        icon="doc"
+        title={session.title ?? session.nickname ?? session.agent_type ?? "session"}
+        aria-label="session metadata"
+        actions={<StatePill state={session.state} />}
+      >
+        <div className="space-y-2">
+          <h1 className="text-base font-semibold text-ink truncate inline-flex items-center gap-1.5">
+            <AgentKindIcon
+              kind={session.agent_kind ?? null}
+              confidence={session.agent_kind_confidence ?? null}
+              className="shrink-0"
             />
-            <p className="text-[11px] text-zinc-500 truncate mt-0.5">
-              {session.project_label ?? session.worktree_root}
-            </p>
-          </div>
-          <StatePill state={session.state} />
-        </div>
-        <div className="flex items-center justify-between text-xs text-zinc-400">
-          <span>
-            <ElapsedClock since={session.started_at} live={live} />
-          </span>
-          <TokenBadge
-            input={session.input_tokens}
-            output={session.output_tokens}
-            cacheRead={session.cache_read_tokens}
-            cacheWrite={session.cache_write_tokens}
+            <SessionLabel session={session} className="truncate" />
+          </h1>
+          <ActivityLine
+            summary={session.activity_summary ?? null}
+            updatedAt={session.activity_updated_at ?? null}
           />
+          <p className="text-[11px] text-ink-muted truncate">
+            {session.project_label ?? session.worktree_root}
+          </p>
+          <div className="flex items-center justify-between text-xs text-ink-muted pt-1 border-t border-line">
+            <span>
+              <ElapsedClock since={session.started_at} live={live} />
+            </span>
+            <TokenBadge
+              input={session.input_tokens}
+              output={session.output_tokens}
+              cacheRead={session.cache_read_tokens}
+              cacheWrite={session.cache_write_tokens}
+            />
+          </div>
         </div>
-      </header>
+      </Window>
 
-      <section aria-label="event timeline" className="space-y-1">
-        <h2 className="text-xs uppercase tracking-wide text-zinc-500">Timeline</h2>
+      <Window icon="doc" title="Timeline" aria-label="event timeline">
+        <h2 className="sr-only">Timeline</h2>
         <TimelineStrip entries={timeline} />
-      </section>
+      </Window>
 
-      <section aria-label="transcript" className="space-y-2">
-        <h2 className="text-xs uppercase tracking-wide text-zinc-500">Transcript</h2>
+      <Window icon="transcript" title="Transcript" aria-label="transcript" bodyClassName="p-3">
+        <h2 className="sr-only">Transcript</h2>
         {transcript.length === 0 ? (
           <EmptyState
             illustration="transcript"
             title="No transcript yet"
-            message="Once the agent emits its first turn, prompts and tool I/O will stream in here in real time."
+            message="Once the agent emits its first turn, prompts and tool I/O stream in here."
           />
         ) : (
           <Transcript transcript={transcript} />
         )}
-      </section>
+      </Window>
     </div>
   );
 }
@@ -516,7 +518,7 @@ function Transcript({ transcript }: { transcript: TranscriptMessage[] }) {
             setActiveIndex(last);
             scrollToIndex(last);
           }}
-          className="fixed bottom-4 right-4 z-10 inline-flex items-center min-h-11 px-3 rounded-full bg-emerald-500 text-emerald-950 text-xs font-medium shadow-lg hover:bg-emerald-400"
+          className="fixed bottom-4 right-4 z-10 inline-flex items-center min-h-11 px-3 rounded-full bg-cta text-white text-xs font-medium shadow-lg hover:bg-cta-hover active:translate-y-px"
           data-testid="jump-to-latest"
         >
           ↓ Jump to latest
@@ -557,7 +559,7 @@ function Scrubber({
             type="button"
             onClick={() => onJump(i)}
             aria-label={`jump to message ${i + 1} (${m.role})`}
-            className={`min-h-6 min-w-6 px-1 inline-flex items-center justify-center text-[9px] font-mono rounded ${tone} ${active ? "ring-1 ring-emerald-400" : ""}`}
+            className={`min-h-6 min-w-6 px-1 inline-flex items-center justify-center text-[9px] font-mono rounded ${tone} ${active ? "ring-1 ring-teal" : ""}`}
           >
             {code}
           </button>
@@ -583,12 +585,12 @@ function roleCode(role: TranscriptMessage["role"]): string {
 function roleTone(role: TranscriptMessage["role"]): string {
   switch (role) {
     case "user":
-      return "bg-emerald-500/15 text-emerald-300";
+      return "bg-teal-soft text-ink";
     case "assistant":
-      return "bg-zinc-800/80 text-zinc-300";
+      return "bg-surface-2 text-ink-muted";
     case "tool_result":
-      return "bg-blue-500/15 text-blue-300";
+      return "bg-info/15 text-info";
     case "system":
-      return "bg-yellow-500/15 text-yellow-300";
+      return "bg-warn/15 text-warn";
   }
 }

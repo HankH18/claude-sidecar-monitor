@@ -14,11 +14,11 @@ interface PermissionSheetProps {
 }
 
 const BTN_ALLOW =
-  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm font-medium bg-emerald-500 text-emerald-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm font-medium bg-cta text-white shadow-[0_1px_0_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.25)] hover:bg-cta-hover active:translate-y-px active:shadow-[inset_0_1px_2px_rgba(0,0,0,0.18)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 const BTN_ASK =
-  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm text-zinc-200 border border-zinc-700 hover:bg-zinc-800/80 disabled:opacity-50 transition-colors";
+  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm text-ink border border-line-strong bg-surface hover:bg-surface-2 active:translate-y-px disabled:opacity-50 transition-colors";
 const BTN_DENY =
-  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm font-medium text-red-300 border border-red-500/50 hover:bg-red-500/15 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+  "inline-flex items-center justify-center min-h-11 px-4 rounded-md text-sm font-medium text-bad bg-surface border border-bad/60 hover:bg-bad/10 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 
 /**
  * V2.D4 — modal/drawer for deciding a single permission request.
@@ -80,109 +80,133 @@ export default function PermissionSheet({ request, onClose, onDecided }: Permiss
         type="button"
         aria-label="close permission sheet"
         onClick={onClose}
-        className="absolute inset-0 bg-black/70 cursor-default"
+        className="absolute inset-0 bg-black/40 cursor-default"
       />
       <dialog
         open
         aria-modal="true"
         aria-label={`Permission request: ${request.tool_name}`}
-        className="relative bg-zinc-950 border border-zinc-700 rounded-t-lg sm:rounded-md p-5 w-full sm:max-w-md max-h-[90vh] overflow-y-auto space-y-3 text-zinc-100"
+        className="relative bg-surface rounded-t-lg sm:rounded-md w-full sm:max-w-md max-h-[90vh] overflow-y-auto text-ink border border-line shadow-[0_8px_24px_rgba(60,40,10,0.18)] p-0"
       >
-        <header className="space-y-1">
-          <p className="text-[10px] uppercase tracking-wide text-zinc-500">Permission request</p>
-          <h3 className="text-base font-semibold inline-flex items-center gap-2">
-            <span aria-hidden="true">🛂</span>
-            <span className="truncate">{request.tool_name}</span>
-          </h3>
-          <Link
-            to={`/sessions/${request.session_id}`}
-            className="block text-[11px] text-emerald-300 hover:text-emerald-200 truncate"
-            title={request.session_id}
-          >
-            session {request.session_id.slice(0, 12)}…
-          </Link>
+        <header className="flex items-center gap-1.5 min-h-8 px-3 py-1.5 bg-titlebar border-b border-line sticky top-0">
+          <span aria-hidden="true" className="text-ink-muted">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.2}
+              aria-hidden="true"
+              focusable="false"
+            >
+              <rect x="3" y="2" width="8" height="10" rx="1" opacity="0.6" />
+              <path d="M5 7l1.3 1.4L9 5.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <span className="text-[12px] font-medium leading-tight truncate text-ink-muted">
+            Permission request
+          </span>
         </header>
 
-        {terminal ? (
-          <div
-            role="alert"
-            className="rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-200 text-xs px-3 py-2"
-          >
-            {terminal}
-            <div className="mt-2">
-              <button type="button" onClick={onClose} className={BTN_ASK}>
-                Close
-              </button>
+        <div className="p-5 space-y-3">
+          <header className="space-y-1">
+            <h3 className="text-base font-semibold inline-flex items-center gap-2 text-ink">
+              <span aria-hidden="true">🛂</span>
+              <span className="truncate">{request.tool_name}</span>
+            </h3>
+            <Link
+              to={`/sessions/${request.session_id}`}
+              className="block text-[11px] text-teal hover:text-cta truncate"
+              title={request.session_id}
+            >
+              session {request.session_id.slice(0, 12)}…
+            </Link>
+          </header>
+
+          {terminal ? (
+            <div
+              role="alert"
+              className="rounded-md border border-warn/40 bg-warn/10 text-warn text-xs px-3 py-2"
+            >
+              {terminal}
+              <div className="mt-2">
+                <button type="button" onClick={onClose} className={BTN_ASK}>
+                  Close
+                </button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <>
-            <section aria-label="tool input">
-              <p className="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">tool_input</p>
-              <pre className="text-[11px] font-mono bg-zinc-900/80 border border-zinc-800 rounded p-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">
-                {prettyPrint(request.tool_input)}
-              </pre>
-            </section>
+          ) : (
+            <>
+              <section aria-label="tool input">
+                <p className="text-[10px] uppercase tracking-wide text-ink-subtle mb-1">
+                  tool_input
+                </p>
+                <pre className="text-[11px] font-mono bg-code-bg text-code-text border border-line rounded p-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">
+                  {prettyPrint(request.tool_input)}
+                </pre>
+              </section>
 
-            <section aria-label="reason">
-              <label
-                htmlFor={`reason-${request.id}`}
-                className="block text-[10px] uppercase tracking-wide text-zinc-500 mb-1"
-              >
-                Reason (optional, for deny/ask)
-              </label>
-              <textarea
-                id={`reason-${request.id}`}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                rows={2}
-                placeholder="e.g. wrong directory"
-                className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/60 focus:outline-none"
-              />
-            </section>
+              <section aria-label="reason">
+                <label
+                  htmlFor={`reason-${request.id}`}
+                  className="block text-[10px] uppercase tracking-wide text-ink-subtle mb-1"
+                >
+                  Reason (optional, for deny/ask)
+                </label>
+                <textarea
+                  id={`reason-${request.id}`}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. wrong directory"
+                  className="w-full px-3 py-2 rounded-md bg-surface border border-line text-sm text-ink placeholder:text-ink-subtle focus:border-teal focus:outline-none"
+                />
+              </section>
 
-            {error ? (
-              <p className="text-xs text-red-400" role="alert">
-                {error}
-              </p>
-            ) : null}
+              {error ? (
+                <p className="text-xs text-bad" role="alert">
+                  {error}
+                </p>
+              ) : null}
 
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <button
-                type="button"
-                disabled={busy !== null}
-                onClick={() => submit("allow")}
-                className={BTN_ALLOW}
-              >
-                {busy === "allow" ? "Allowing…" : "Allow"}
-              </button>
-              <button
-                type="button"
-                disabled={busy !== null}
-                onClick={() => submit("ask")}
-                className={BTN_ASK}
-              >
-                {busy === "ask" ? "Asking…" : "Ask"}
-              </button>
-              <button
-                type="button"
-                disabled={busy !== null}
-                onClick={() => submit("deny")}
-                className={BTN_DENY}
-              >
-                {busy === "deny" ? "Denying…" : "Deny"}
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={busy !== null}
-                className="ml-auto text-xs text-zinc-400 hover:text-zinc-200 px-2 py-1"
-              >
-                Cancel
-              </button>
-            </div>
-          </>
-        )}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => submit("allow")}
+                  className={BTN_ALLOW}
+                >
+                  {busy === "allow" ? "Allowing…" : "Allow"}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => submit("ask")}
+                  className={BTN_ASK}
+                >
+                  {busy === "ask" ? "Asking…" : "Ask"}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => submit("deny")}
+                  className={BTN_DENY}
+                >
+                  {busy === "deny" ? "Denying…" : "Deny"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={busy !== null}
+                  className="ml-auto text-xs text-ink-muted hover:text-ink px-2 py-1"
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </dialog>
     </div>
   );

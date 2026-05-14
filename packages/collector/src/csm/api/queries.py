@@ -5,13 +5,18 @@ Centralises SQL so route handlers stay focused on shape conversion.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from csm.api.models import (
     DailyTotal,
+    DashboardKpis,
+    MinuteBucket,
     ModelTokens,
     Session,
+    SessionStateCounts,
     SubtreeTokens,
+    TopModelToday,
     TopProject,
     TopSession,
     TranscriptMessage,
@@ -20,6 +25,11 @@ from csm.api.models import (
 from csm.digest import compute_session_digest
 from csm.tokens import get_daily_totals, get_subtree_tokens
 from csm.tree import build_project_tree
+
+# V3 — rolling token window. Conservative default; trade-off is between
+# "shows recent activity in real time" (small window) and "smooths out
+# bursty token spend so you actually see the trend" (large window).
+TOKENS_LAST_HOUR_SECONDS = 60 * 60
 
 _SESSION_COLS = (
     "session_id, parent_session_id, worktree_root, project_label, cwd, "
@@ -63,6 +73,30 @@ def _row_to_session(row: tuple[Any, ...]) -> Session:
     )
 
 
+def session_tokens_in_window(
+    conn: Any, session_id: str, *, seconds: int = TOKENS_LAST_HOUR_SECONDS
+) -> int | None:
+    """Sum input + output tokens from `transcript_messages` rows for
+    ``session_id`` whose timestamp falls within the last ``seconds``.
+
+    Returns:
+      - ``int`` when at least one row exists in the window (may be 0)
+      - ``None`` when no rows fall in the window — distinct so the UI
+        can show "—" instead of "0" for sessions with no recent activity
+    """
+    row = conn.execute(
+        "SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), "
+        "  COALESCE(SUM(output_tokens), 0) "
+        "FROM transcript_messages "
+        "WHERE session_id = ? "
+        "  AND timestamp >= datetime('now', ?)",
+        (session_id, f"-{seconds} seconds"),
+    ).fetchone()
+    if row is None or row[0] == 0:
+        return None
+    return int(row[1]) + int(row[2])
+
+
 def list_sessions(conn: Any, *, limit: int = 200) -> list[Session]:
     rows = conn.execute(
         f"SELECT {_SESSION_COLS} FROM sessions ORDER BY last_event_at DESC LIMIT ?",
@@ -79,10 +113,17 @@ def list_sessions(conn: Any, *, limit: int = 200) -> list[Session]:
             summary, generated_at = compute_session_digest(conn, s.session_id)
         except Exception:
             # Digest is best-effort — never let it 500 the API.
-            continue
-        if summary is not None and s.activity_summary != summary:
-            s.activity_summary = summary
-            s.activity_updated_at = generated_at
+            pass
+        else:
+            if summary is not None and s.activity_summary != summary:
+                s.activity_summary = summary
+                s.activity_updated_at = generated_at
+        # V3 — rolling 60-min token window, also computed at read time.
+        # One indexed lookup per session row; the transcript timestamp
+        # column has an index (see migration 001). Same best-effort
+        # posture as the digest above.
+        with contextlib.suppress(Exception):
+            s.tokens_last_hour = session_tokens_in_window(conn, s.session_id)
     return sessions
 
 
@@ -97,10 +138,13 @@ def get_session(conn: Any, session_id: str) -> Session | None:
     try:
         summary, generated_at = compute_session_digest(conn, session_id)
     except Exception:
-        return session
-    if summary is not None and session.activity_summary != summary:
-        session.activity_summary = summary
-        session.activity_updated_at = generated_at
+        pass
+    else:
+        if summary is not None and session.activity_summary != summary:
+            session.activity_summary = summary
+            session.activity_updated_at = generated_at
+    with contextlib.suppress(Exception):
+        session.tokens_last_hour = session_tokens_in_window(conn, session_id)
     return session
 
 
@@ -357,3 +401,150 @@ def daily_totals(conn: Any, start: str, end: str) -> list[DailyTotal]:
         )
         for d in get_daily_totals(conn, start, end)
     ]
+
+
+
+# ────────────────────────── V3 dashboard KPI rollups ──────────────────────────
+
+# Bucket size for the events-per-minute sparkline. 60 buckets * 1 minute
+# = a one-hour strip rendered as ~60 vertical bars on the dashboard.
+SPARKLINE_BUCKETS = 60
+SPARKLINE_BUCKET_SECONDS = 60
+
+
+def _state_counts(conn: Any) -> SessionStateCounts:
+    rows = conn.execute(
+        "SELECT state, COUNT(*) FROM sessions GROUP BY state"
+    ).fetchall()
+    counts = SessionStateCounts()
+    for state, n in rows:
+        # Setattr by state name — Pydantic v2 validates on assign.
+        if hasattr(counts, state):
+            setattr(counts, state, int(n))
+    return counts
+
+
+def _tokens_in_window(conn: Any, *, seconds: int) -> int:
+    """Sum input+output tokens across ALL transcript rows within the
+    given trailing window. Used for the top-line "today" / "last hour"
+    KPI tiles."""
+    row = conn.execute(
+        "SELECT COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0) "
+        "FROM transcript_messages "
+        "WHERE timestamp >= datetime('now', ?)",
+        (f"-{seconds} seconds",),
+    ).fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def _events_per_minute_60m(conn: Any) -> list[MinuteBucket]:
+    """60-bucket sparkline of events per minute over the last hour.
+
+    Always returns ``SPARKLINE_BUCKETS`` entries (zero-filled), so the
+    UI can render a fixed-width strip without worrying about gaps.
+    """
+    rows = conn.execute(
+        """
+        SELECT strftime('%Y-%m-%dT%H:%M:00Z', received_at) AS minute,
+               COUNT(*) AS n
+        FROM events
+        WHERE received_at >= datetime('now', ?)
+        GROUP BY minute
+        """,
+        (f"-{SPARKLINE_BUCKETS * SPARKLINE_BUCKET_SECONDS} seconds",),
+    ).fetchall()
+    counts: dict[str, int] = {str(r[0]): int(r[1]) for r in rows}
+
+    # Build a zero-filled series anchored on "now" rounded down to the
+    # minute. Using SQLite for the anchor keeps clock semantics aligned
+    # with the bucket keys above.
+    anchor_row = conn.execute(
+        "SELECT strftime('%Y-%m-%dT%H:%M:00Z', 'now')"
+    ).fetchone()
+    anchor = str(anchor_row[0]) if anchor_row and anchor_row[0] else None
+    if anchor is None:
+        return []
+
+    out: list[MinuteBucket] = []
+    # Walk backwards from anchor in 1-minute steps, prepend so the
+    # series reads chronologically left-to-right.
+    for i in range(SPARKLINE_BUCKETS - 1, -1, -1):
+        row = conn.execute(
+            "SELECT strftime('%Y-%m-%dT%H:%M:00Z', 'now', ?)",
+            (f"-{i} minutes",),
+        ).fetchone()
+        ts = str(row[0]) if row and row[0] else anchor
+        out.append(MinuteBucket(ts=ts, count=counts.get(ts, 0)))
+    return out
+
+
+def _top_models_today(conn: Any) -> list[TopModelToday]:
+    """Per-model token totals scoped to the last 24h. Mirrors
+    `totals_by_model` but with a time filter so the dashboard reads
+    'today' not 'all time'."""
+    rows = conn.execute(
+        """
+        SELECT COALESCE(model, '(unknown)') AS model,
+               COALESCE(SUM(input_tokens), 0),
+               COALESCE(SUM(output_tokens), 0),
+               COALESCE(SUM(cache_read_input_tokens), 0),
+               COALESCE(SUM(cache_creation_input_tokens), 0)
+        FROM transcript_messages
+        WHERE timestamp >= datetime('now', '-1 day')
+        GROUP BY model
+        ORDER BY (SUM(input_tokens) + SUM(output_tokens)) DESC
+        LIMIT 5
+        """
+    ).fetchall()
+    return [
+        TopModelToday(
+            model=str(r[0]),
+            input=int(r[1]),
+            output=int(r[2]),
+            cache_read=int(r[3]),
+            cache_write=int(r[4]),
+        )
+        for r in rows
+    ]
+
+
+def dashboard_kpis(conn: Any) -> DashboardKpis:
+    """Single-query bundle for the V3 KPI landing page.
+
+    Composed of independent SELECTs; total wire size is small and the
+    queries are short-lived so we don't bother batching. SSE pushes a
+    cheap invalidation on relevant bus events; the dashboard refetches.
+    """
+    state_counts = _state_counts(conn)
+    live_sessions = (
+        state_counts.running
+        + state_counts.tool
+        + state_counts.waiting_user
+        + state_counts.idle
+        + state_counts.hung
+    )
+    total_tokens_today = _tokens_in_window(conn, seconds=24 * 60 * 60)
+    total_tokens_last_hour = _tokens_in_window(conn, seconds=60 * 60)
+
+    events_row = conn.execute(
+        "SELECT COUNT(*) FROM events WHERE received_at >= datetime('now', '-1 hour')"
+    ).fetchone()
+    events_last_hour = int(events_row[0]) if events_row and events_row[0] is not None else 0
+
+    sparkline = _events_per_minute_60m(conn)
+    top_models = _top_models_today(conn)
+
+    as_of_row = conn.execute("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now')").fetchone()
+    as_of = str(as_of_row[0]) if as_of_row and as_of_row[0] else ""
+
+    return DashboardKpis(
+        live_sessions=live_sessions,
+        state_counts=state_counts,
+        hung_sessions=state_counts.hung,
+        total_tokens_today=total_tokens_today,
+        total_tokens_last_hour=total_tokens_last_hour,
+        events_last_hour=events_last_hour,
+        events_per_minute_60m=sparkline,
+        top_models_today=top_models,
+        as_of=as_of,
+    )

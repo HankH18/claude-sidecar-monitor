@@ -41,6 +41,11 @@ class Session(BaseModel):
     nickname: str | None = None
     activity_summary: str | None = None
     activity_updated_at: str | None = None
+    # V3 — rolling 60-min token spend, computed at read time from
+    # transcript_messages timestamps. ``None`` when no transcript rows are
+    # present in the window (distinct from `0`, which means rows exist
+    # but contributed no tokens).
+    tokens_last_hour: int | None = None
 
 
 class ModelTokens(BaseModel):
@@ -137,6 +142,65 @@ class TokensResponse(BaseModel):
     topProjects: list[TopProject]
     totalsByModel: list[ModelTokens]
     dailyTotals: list[DailyTotal]
+
+
+class SessionStateCounts(BaseModel):
+    """Count of currently-stored sessions by state. Sums to the total
+    session count in the DB (no time filter)."""
+
+    running: int = 0
+    tool: int = 0
+    waiting_user: int = 0
+    idle: int = 0
+    hung: int = 0
+    done: int = 0
+
+
+class MinuteBucket(BaseModel):
+    """One minute of the events-per-minute sparkline. ``ts`` is the
+    bucket-start in UTC Zulu; ``count`` is the events received in that
+    minute."""
+
+    ts: str
+    count: int
+
+
+class TopModelToday(BaseModel):
+    """Per-model token totals scoped to today (UTC). Mirrors ModelTokens
+    but with the explicit window-scoped semantics for the dashboard."""
+
+    model: str
+    input: int
+    output: int
+    cache_read: int
+    cache_write: int
+
+
+class DashboardKpis(BaseModel):
+    """Top-of-dashboard KPI rollup.
+
+    All counts are point-in-time except the token totals which are
+    summed over the window stated in the field name.
+    """
+
+    # Live sessions — anything not `done`.
+    live_sessions: int
+    state_counts: SessionStateCounts
+    hung_sessions: int
+
+    # Token spend.
+    total_tokens_today: int
+    total_tokens_last_hour: int
+
+    # Event rate.
+    events_last_hour: int
+    events_per_minute_60m: list[MinuteBucket]
+
+    # Per-model spend (last 24h).
+    top_models_today: list[TopModelToday]
+
+    # As-of timestamp so the client can flag stale data if the SSE drops.
+    as_of: str
 
 
 class Settings(BaseModel):

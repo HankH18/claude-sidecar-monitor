@@ -3,13 +3,10 @@ import { useStream } from "../hooks/useStream";
 /**
  * Header connection indicator.
  *
- * Visual: a 10px dot + always-visible lowercase label. Earlier the label hid
- * below `sm:` — that left a 2×2px dot at 380px wide which was both invisible
- * to screen readers (it's just an aria-label) and indistinguishable to
- * non-technical viewers. We now show "live" / "offline" inline at all
- * widths; the dot doubles as a colorblind-safe icon.
- *
- * `useStream()` is mounted once here; the underlying EventSource is shared.
+ * Visual: a 10px dot + always-visible lowercase label. The pulsing dot is
+ * driven by `animate-pulse` for transient (connecting/reconnecting) states.
+ * Colors come from the warm-state palette so the indicator reads as part
+ * of the PostHog-inspired theme rather than the previous neon-on-black look.
  */
 export default function ConnectionStatus() {
   const { status, lastEventAt } = useStream();
@@ -17,8 +14,8 @@ export default function ConnectionStatus() {
   const isPending = status === "reconnecting" || status === "connecting";
   const isLive = status === "connected";
 
-  const dotColor = isLive ? "bg-emerald-500" : isPending ? "bg-amber-400" : "bg-red-500";
-  const textColor = isLive ? "text-emerald-300" : isPending ? "text-amber-300" : "text-red-300";
+  const dotColor = isLive ? "bg-good" : isPending ? "bg-warn" : "bg-bad";
+  const textColor = isLive ? "text-good" : isPending ? "text-warn" : "text-bad";
 
   const label = isLive
     ? "live"
@@ -42,7 +39,7 @@ export default function ConnectionStatus() {
       <span
         aria-hidden="true"
         className={`inline-block w-2.5 h-2.5 rounded-full ${dotColor} ${
-          isPending ? "animate-pulse" : ""
+          isPending || isLive ? "animate-pulse" : ""
         }`}
       />
       <span>{label}</span>

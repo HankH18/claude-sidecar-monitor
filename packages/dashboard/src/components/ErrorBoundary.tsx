@@ -45,16 +45,16 @@ export default class ErrorBoundary extends Component<Props, State> {
     return (
       <div
         role="alert"
-        className="min-h-dvh flex items-center justify-center p-6 bg-zinc-950 text-zinc-200"
+        className="min-h-dvh flex items-center justify-center p-6 bg-canvas text-ink"
       >
-        <div className="max-w-md space-y-3 rounded-md border border-red-500/40 bg-red-500/5 p-4">
-          <h1 className="text-base font-semibold text-red-300">Something went wrong.</h1>
-          <p className="text-xs text-zinc-400 break-all">{error.message}</p>
+        <div className="max-w-md space-y-3 rounded-md border border-bad/40 bg-surface p-4 shadow-[0_1px_2px_rgba(80,60,30,0.08)]">
+          <h1 className="text-base font-semibold text-bad">Something went wrong.</h1>
+          <p className="text-xs text-ink-muted break-all">{error.message}</p>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={this.reset}
-              className="px-3 py-1.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-sm hover:bg-emerald-500/30"
+              className="inline-flex items-center justify-center min-h-11 px-4 rounded-md bg-cta text-white text-sm font-medium shadow-[0_1px_0_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.25)] hover:bg-cta-hover active:translate-y-px"
             >
               Try again
             </button>
@@ -63,7 +63,7 @@ export default class ErrorBoundary extends Component<Props, State> {
               onClick={() => {
                 if (typeof window !== "undefined") window.location.reload();
               }}
-              className="px-3 py-1.5 rounded border border-zinc-800 text-sm text-zinc-200 hover:bg-zinc-900"
+              className="inline-flex items-center justify-center min-h-11 px-4 rounded-md border border-line-strong bg-surface text-sm text-ink hover:bg-surface-2 active:translate-y-px"
             >
               Reload
             </button>

@@ -25,18 +25,18 @@ export default function PendingApprovalsBanner() {
       <div
         role="alert"
         aria-live="polite"
-        className="mx-3 my-2 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-100 text-xs flex items-center justify-between gap-2"
+        className="mx-3 my-2 rounded-md border border-warn/40 bg-warn/10 text-ink flex items-center justify-between gap-2"
         data-testid="pending-approvals-banner"
       >
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex-1 inline-flex items-center gap-2 min-h-11 px-3 text-left hover:bg-amber-500/15 rounded-md"
+          className="flex-1 inline-flex items-center gap-2 min-h-11 px-3 text-left hover:bg-warn/15 rounded-md text-sm"
         >
           <span aria-hidden="true">🛂</span>
           <span className="truncate">
             {requests.length} permission request{requests.length === 1 ? "" : "s"} waiting —{" "}
-            <span className="text-amber-300 underline">review</span>
+            <span className="text-warn underline">review</span>
           </span>
         </button>
       </div>

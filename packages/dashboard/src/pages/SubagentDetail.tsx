@@ -6,6 +6,7 @@ import ActivityLine from "../components/ActivityLine";
 import AgentKindIcon from "../components/AgentKindIcon";
 import Breadcrumbs from "../components/Breadcrumbs";
 import StatePill from "../components/StatePill";
+import Window from "../components/Window";
 import { useSessions } from "../hooks/useSessions";
 
 /**
@@ -84,15 +85,15 @@ export default function SubagentDetail() {
   }, [virtualId, worktreeRoot, sessions.length]);
 
   if (!virtualId) {
-    return <p className="text-sm text-zinc-500">No subagent id.</p>;
+    return <p className="text-sm text-ink-muted">No subagent id.</p>;
   }
 
   if (loading) {
     return (
       <div className="space-y-3" aria-busy="true">
-        <div className="h-3 w-12 rounded bg-zinc-800/60 animate-pulse" />
-        <div className="h-5 w-2/3 rounded bg-zinc-800/60 animate-pulse" />
-        <div className="h-3 w-3/4 rounded bg-zinc-800/40 animate-pulse" />
+        <div className="h-3 w-12 rounded bg-line/60 animate-pulse" />
+        <div className="h-5 w-2/3 rounded bg-line/60 animate-pulse" />
+        <div className="h-3 w-3/4 rounded bg-line/40 animate-pulse" />
       </div>
     );
   }
@@ -101,12 +102,12 @@ export default function SubagentDetail() {
     return (
       <div className="space-y-3">
         <Breadcrumbs items={[{ label: "Live", to: "/" }, { label: "Subagent" }]} />
-        <h1 className="text-lg font-semibold text-zinc-100">Subagent</h1>
-        <p className="text-sm text-zinc-500">{error ?? "Subagent not found."}</p>
+        <h1 className="text-2xl font-semibold text-ink leading-tight">Subagent</h1>
+        <p className="text-sm text-ink-muted">{error ?? "Subagent not found."}</p>
         {parentSessionId ? (
           <Link
             to={`/sessions/${parentSessionId}`}
-            className="inline-flex items-center min-h-11 px-3 rounded-md text-xs text-emerald-300 hover:text-emerald-200 border border-zinc-800 hover:bg-zinc-900/40"
+            className="inline-flex items-center min-h-11 px-3 rounded-md text-xs text-teal hover:text-cta border border-line bg-surface hover:bg-surface-2"
           >
             ← parent session
           </Link>
@@ -131,45 +132,45 @@ export default function SubagentDetail() {
         ]}
       />
 
-      <header className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-base font-semibold text-zinc-100 truncate inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className="text-zinc-500 font-mono text-sm">
-                🜲
-              </span>
-              <AgentKindIcon
-                kind={session.agent_kind ?? null}
-                confidence={session.agent_kind_confidence ?? null}
-              />
-              <span className="truncate">{session.title ?? session.nickname ?? "subagent"}</span>
-            </h1>
-            {node.description ? (
-              <p className="text-[11px] text-zinc-400 mt-1">{node.description}</p>
-            ) : null}
-          </div>
-          <StatePill state={session.state} />
-        </div>
-        <ActivityLine
-          summary={session.activity_summary ?? null}
-          updatedAt={session.activity_updated_at ?? null}
-        />
-      </header>
-
-      <section
-        aria-label="subagent metadata"
-        className="grid grid-cols-2 gap-3 text-sm rounded-md border border-zinc-800 p-4"
+      <Window
+        icon="doc"
+        title={session.title ?? session.nickname ?? "subagent"}
+        actions={<StatePill state={session.state} />}
       >
-        <MetaItem label="started" value={fmtTs(session.started_at)} />
-        <MetaItem label="completed" value={fmtTs(session.completed_at)} />
-        <MetaItem label="state" value={session.state} />
-        <MetaItem label="kind" value={(session.agent_kind ?? "—") as string} />
-      </section>
+        <div className="space-y-2">
+          <h1 className="text-base font-semibold text-ink truncate inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="text-ink-subtle font-mono text-sm">
+              🜲
+            </span>
+            <AgentKindIcon
+              kind={session.agent_kind ?? null}
+              confidence={session.agent_kind_confidence ?? null}
+            />
+            <span className="truncate">{session.title ?? session.nickname ?? "subagent"}</span>
+          </h1>
+          {node.description ? (
+            <p className="text-[11px] text-ink-muted">{node.description}</p>
+          ) : null}
+          <ActivityLine
+            summary={session.activity_summary ?? null}
+            updatedAt={session.activity_updated_at ?? null}
+          />
+        </div>
+      </Window>
+
+      <Window icon="doc" title="Subagent metadata" aria-label="subagent metadata">
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <MetaItem label="started" value={fmtTs(session.started_at)} />
+          <MetaItem label="completed" value={fmtTs(session.completed_at)} />
+          <MetaItem label="state" value={session.state} />
+          <MetaItem label="kind" value={(session.agent_kind ?? "—") as string} />
+        </div>
+      </Window>
 
       {parentSessionId ? (
         <Link
           to={`/sessions/${parentSessionId}`}
-          className="inline-flex items-center min-h-11 px-3 rounded-md text-xs text-emerald-300 hover:text-emerald-200 border border-zinc-800 hover:bg-zinc-900/40"
+          className="inline-flex items-center min-h-11 px-3 rounded-md text-xs text-teal hover:text-cta border border-line bg-surface hover:bg-surface-2"
         >
           ← parent session ({parentSessionId.slice(0, 8)})
         </Link>
@@ -181,8 +182,8 @@ export default function SubagentDetail() {
 function MetaItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className="text-zinc-100 font-mono text-sm mt-0.5 truncate">{value}</div>
+      <div className="text-[10px] uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className="text-ink font-mono text-sm mt-0.5 truncate">{value}</div>
     </div>
   );
 }

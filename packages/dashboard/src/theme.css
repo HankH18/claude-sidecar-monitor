@@ -1,46 +1,90 @@
 /*
- * Sidecar design tokens.
+ * Sidecar design tokens — PostHog-inspired warm light theme.
  *
- * Centralizes the dark-theme palette so semantic intent (primary action,
- * destructive action, session-state colors) lives in one place. Components
- * still lean on Tailwind utility classes for layout — these tokens back the
- * few classes we expose as `var(--…)` and the SVG/inline-style usage in
- * `Tokens.tsx`.
+ * Centralizes the warm-beige "desktop" palette so semantic intent (primary
+ * action, destructive action, session-state colors) lives in one place.
+ * Components lean on Tailwind utility classes; these tokens back the
+ * `@theme` exports below so Tailwind utilities like `bg-canvas`, `text-ink`,
+ * `border-line`, `bg-cta`, etc. resolve correctly.
  *
  * Anti-goal: do NOT replace every Tailwind class with a CSS variable. The
  * tokens here exist for *cross-component consistency*, not for theming.
  */
 
 :root {
-  /* Surfaces (dark) — bumped one step lighter at the borders so cards remain
-     visible at low brightness. */
-  --color-bg: rgb(9 9 11); /* zinc-950 */
-  --color-surface: rgb(24 24 27); /* zinc-900 */
-  --color-border: rgb(39 39 42); /* zinc-800 — was zinc-900 in places */
-  --color-border-strong: rgb(63 63 70); /* zinc-700 */
-  --color-text: rgb(244 244 245); /* zinc-100 */
-  --color-text-muted: rgb(161 161 170); /* zinc-400 */
-  --color-text-faint: rgb(113 113 122); /* zinc-500 */
+  /* Surfaces */
+  --csm-bg: #e8dfc8; /* main canvas — beige */
+  --csm-bg-speckle: rgba(0, 0, 0, 0.04);
+  --csm-surface: #f7f5ef; /* window/card body */
+  --csm-surface-2: #efebe0; /* slightly recessed surface */
+  --csm-titlebar: #e2dccc; /* window title bar */
 
-  /* Brand / primary action — emerald. */
-  --color-primary: rgb(16 185 129); /* emerald-500 */
-  --color-primary-strong: rgb(5 150 105); /* emerald-600 */
-  --color-primary-soft: rgb(16 185 129 / 0.15);
+  /* Text */
+  --csm-text: #1f1d18;
+  --csm-text-muted: #6b6555;
+  --csm-text-subtle: #948c7a;
 
-  /* Session-state semantics. Colors *and* an icon back each state — color is
-     never the only signal (cf. StatePill.tsx). */
-  --color-running: rgb(16 185 129); /* emerald — go */
-  --color-waiting: rgb(251 146 60); /* orange — needs you */
-  --color-stale: rgb(250 204 21); /* yellow — slow */
-  --color-hung: rgb(239 68 68); /* red — escalate */
-  --color-done: rgb(113 113 122); /* zinc — finished */
+  /* Borders */
+  --csm-border: #cfc8b5;
+  --csm-border-strong: #a39a82;
 
-  /* Destructive (Purge / Change passphrase). */
-  --color-danger: rgb(239 68 68);
-  --color-danger-soft: rgb(239 68 68 / 0.12);
+  /* Accent — PostHog orange CTA */
+  --csm-orange: #ee5d36;
+  --csm-orange-hover: #d94a25;
+  --csm-orange-text: #ffffff;
 
-  /* Focus ring — emerald, high-contrast against any surface. */
-  --color-focus: rgb(52 211 153); /* emerald-400 */
+  /* Accent — teal (active states, highlights) */
+  --csm-teal: #5fb3a1;
+  --csm-teal-soft: #b9dfd7;
+
+  /* State colors — warm-toned versions of the existing semantic palette */
+  --csm-good: #4a8a52;
+  --csm-warn: #d9963a;
+  --csm-bad: #c44a47;
+  --csm-info: #4a73b0;
+
+  /* Code surfaces — kept dark for readability */
+  --csm-code-bg: #2b2620;
+  --csm-code-text: #f0ebd9;
+
+  /* Focus ring — teal, high-contrast against any warm surface. */
+  --csm-focus: #2e7e6b;
+
+  /* Legacy aliases so any straggler usage of the old vars still resolves
+     to something reasonable instead of a hard break. Removable once we
+     verify no consumer references them. */
+  --color-bg: var(--csm-bg);
+  --color-surface: var(--csm-surface);
+  --color-border: var(--csm-border);
+  --color-text: var(--csm-text);
+  --color-text-muted: var(--csm-text-muted);
+  --color-primary: var(--csm-orange);
+  --color-focus: var(--csm-focus);
+}
+
+/* Expose tokens as Tailwind theme variables so `bg-canvas`, `text-ink`,
+   `border-line`, `bg-cta`, etc. resolve to our palette. Tailwind v4
+   `@theme` reads these and generates utility classes at build time. */
+@theme {
+  --color-canvas: #e8dfc8;
+  --color-surface: #f7f5ef;
+  --color-surface-2: #efebe0;
+  --color-titlebar: #e2dccc;
+  --color-ink: #1f1d18;
+  --color-ink-muted: #6b6555;
+  --color-ink-subtle: #948c7a;
+  --color-line: #cfc8b5;
+  --color-line-strong: #a39a82;
+  --color-cta: #ee5d36;
+  --color-cta-hover: #d94a25;
+  --color-teal: #5fb3a1;
+  --color-teal-soft: #b9dfd7;
+  --color-good: #4a8a52;
+  --color-warn: #d9963a;
+  --color-bad: #c44a47;
+  --color-info: #4a73b0;
+  --color-code-bg: #2b2620;
+  --color-code-text: #f0ebd9;
 }
 
 /* Universal focus ring. Tailwind `focus:` utilities still work, but this
@@ -56,20 +100,20 @@
     textarea,
     summary
   ):focus-visible {
-  outline: 2px solid var(--color-focus);
+  outline: 2px solid var(--csm-focus);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
 /* Subtle pulsing ring used for hung sessions — a stronger signal than
-   `animate-pulse` opacity alone. */
+   `animate-pulse` opacity alone. Re-tuned for the warm "bad" red. */
 @keyframes csm-pulse-ring {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(239 68 68 / 0.55);
+    box-shadow: 0 0 0 0 rgba(196, 74, 71, 0.55);
   }
   50% {
-    box-shadow: 0 0 0 4px rgb(239 68 68 / 0);
+    box-shadow: 0 0 0 4px rgba(196, 74, 71, 0);
   }
 }
 

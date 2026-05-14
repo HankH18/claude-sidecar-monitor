@@ -19,13 +19,13 @@ export default function ActivityLine({ summary, updatedAt, className = "" }: Act
   const ts = updatedAt ? formatRelative(updatedAt) : "";
   return (
     <div
-      className={`flex items-center gap-2 text-[11px] text-zinc-500 ${className}`}
+      className={`flex items-center gap-2 text-[11px] text-ink-muted ${className}`}
       data-testid="activity-line"
     >
       <span className="truncate min-w-0 flex-1">{text}</span>
       {ts ? (
         <span
-          className="shrink-0 tabular-nums text-zinc-600"
+          className="shrink-0 tabular-nums text-ink-subtle"
           title={updatedAt ? new Date(updatedAt).toLocaleString() : undefined}
         >
           {ts}

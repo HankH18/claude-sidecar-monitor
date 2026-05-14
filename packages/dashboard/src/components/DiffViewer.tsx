@@ -21,6 +21,9 @@ interface DiffViewerProps {
  *
  * Bash uses a darker terminal-style block. Read tool results render as
  * collapsed details so they don't dominate the transcript.
+ *
+ * Code surfaces stay dark even in the light theme — readability of small
+ * mono text on a warm cream background is markedly worse than dark-on-cream.
  */
 export default function DiffViewer({
   toolName,
@@ -35,10 +38,8 @@ export default function DiffViewer({
     <DiffPre content={content} className={className} />
   ) : (
     <pre
-      className={`whitespace-pre-wrap break-words text-[11px] leading-snug font-mono p-2 rounded-md ${
-        isBash
-          ? "bg-black text-emerald-200 border border-zinc-800"
-          : "bg-zinc-900 text-zinc-300 border border-zinc-800"
+      className={`whitespace-pre-wrap break-words text-[11px] leading-snug font-mono p-2 rounded-md bg-code-bg text-code-text border border-line ${
+        isBash ? "" : ""
       } ${className}`}
     >
       {content}
@@ -49,7 +50,7 @@ export default function DiffViewer({
 
   return (
     <details className="rounded-md">
-      <summary className="cursor-pointer text-xs text-zinc-400 hover:text-zinc-200 py-2 min-h-11 inline-flex items-center">
+      <summary className="cursor-pointer text-xs text-ink-muted hover:text-ink py-2 min-h-11 inline-flex items-center">
         {toolName ?? "tool output"} (click to expand)
       </summary>
       <div className="mt-1">{body}</div>
@@ -68,7 +69,7 @@ function DiffPre({ content, className = "" }: { content: string; className?: str
   if (!looksLikeDiff) {
     return (
       <pre
-        className={`whitespace-pre-wrap break-words text-[11px] leading-snug font-mono p-2 rounded-md bg-zinc-900 text-zinc-200 border border-zinc-800 ${className}`}
+        className={`whitespace-pre-wrap break-words text-[11px] leading-snug font-mono p-2 rounded-md bg-code-bg text-code-text border border-line ${className}`}
       >
         {content}
       </pre>
@@ -78,7 +79,7 @@ function DiffPre({ content, className = "" }: { content: string; className?: str
   const widthCh = String(lines.length).length;
   return (
     <div
-      className={`text-[11px] leading-snug font-mono rounded-md bg-zinc-900 border border-zinc-800 overflow-x-auto ${className}`}
+      className={`text-[11px] leading-snug font-mono rounded-md bg-code-bg text-code-text border border-line overflow-x-auto ${className}`}
     >
       <ol className="min-w-full">
         {lines.map((raw, i) => {
@@ -91,7 +92,7 @@ function DiffPre({ content, className = "" }: { content: string; className?: str
             >
               <span
                 aria-hidden="true"
-                className="select-none px-2 py-0.5 text-zinc-600 text-right shrink-0 border-r border-zinc-800/80"
+                className="select-none px-2 py-0.5 text-ink-subtle text-right shrink-0 border-r border-line/30"
                 style={{ minWidth: `${widthCh + 1}ch` }}
               >
                 {i + 1}
@@ -106,15 +107,16 @@ function DiffPre({ content, className = "" }: { content: string; className?: str
 }
 
 function lineTint(line: string): { row: string; text: string } {
-  // Hunk header `@@ -1,3 +1,4 @@` — soft purple/zinc.
-  if (line.startsWith("@@")) return { row: "bg-zinc-800/40", text: "text-zinc-400" };
+  // Hunk header `@@ -1,3 +1,4 @@` — soft mid-tone.
+  if (line.startsWith("@@")) return { row: "bg-white/5", text: "text-code-text/70" };
   // Added — soft green tint, brighter text.
   if (line.startsWith("+") && !line.startsWith("+++"))
-    return { row: "bg-emerald-500/10", text: "text-emerald-200" };
+    return { row: "bg-good/20", text: "text-[#bce6c1]" };
   // Removed — soft red tint.
   if (line.startsWith("-") && !line.startsWith("---"))
-    return { row: "bg-red-500/10", text: "text-red-200" };
+    return { row: "bg-bad/20", text: "text-[#f0b8b6]" };
   // File header lines (+++ / ---) — dim.
-  if (line.startsWith("+++") || line.startsWith("---")) return { row: "", text: "text-zinc-500" };
-  return { row: "", text: "text-zinc-300" };
+  if (line.startsWith("+++") || line.startsWith("---"))
+    return { row: "", text: "text-code-text/60" };
+  return { row: "", text: "text-code-text" };
 }

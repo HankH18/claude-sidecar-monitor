@@ -193,6 +193,65 @@ def test_get_tree_empty_for_unknown_worktree(client: TestClient) -> None:
     assert r.json() == []
 
 
+# ────────── /api/dashboard (V3 KPI rollup) ──────────
+
+
+def test_get_dashboard_shape(client: TestClient) -> None:
+    """V3 — the dashboard endpoint returns the full KPI rollup with
+    state counts, token totals, event-rate sparkline, and top models."""
+    r = client.get("/api/dashboard")
+    assert r.status_code == 200
+    body = r.json()
+    # Top-line counts.
+    assert "live_sessions" in body
+    assert "hung_sessions" in body
+    assert "state_counts" in body
+    # State counts include every state column with an int.
+    for key in ("running", "tool", "waiting_user", "idle", "hung", "done"):
+        assert key in body["state_counts"]
+        assert isinstance(body["state_counts"][key], int)
+    # Token totals are scoped to a trailing window.
+    assert isinstance(body["total_tokens_today"], int)
+    assert isinstance(body["total_tokens_last_hour"], int)
+    # Sparkline always returns the fixed bucket count, zero-filled.
+    assert isinstance(body["events_per_minute_60m"], list)
+    assert len(body["events_per_minute_60m"]) == 60
+    for bucket in body["events_per_minute_60m"]:
+        assert "ts" in bucket
+        assert "count" in bucket
+        assert isinstance(bucket["count"], int)
+    # Top models is a list (may be empty in the test fixture).
+    assert isinstance(body["top_models_today"], list)
+    # As-of timestamp lets the client flag stale data.
+    assert body["as_of"]
+
+
+def test_get_dashboard_live_count_matches_state_counts(client: TestClient) -> None:
+    """live_sessions = sum of non-done state buckets. Regression guard
+    against `state_counts.done` accidentally being included."""
+    r = client.get("/api/dashboard")
+    body = r.json()
+    sc = body["state_counts"]
+    expected_live = sc["running"] + sc["tool"] + sc["waiting_user"] + sc["idle"] + sc["hung"]
+    assert body["live_sessions"] == expected_live
+    assert body["hung_sessions"] == sc["hung"]
+
+
+# ────────── /api/state — V3 session fields ──────────
+
+
+def test_state_includes_tokens_last_hour_field(client: TestClient) -> None:
+    """V3 — every Session returned from /api/state carries tokens_last_hour
+    (int when transcript rows exist in window, None otherwise)."""
+    r = client.get("/api/state")
+    body = r.json()
+    assert body["sessions"], "fixture should seed at least one session"
+    for s in body["sessions"]:
+        assert "tokens_last_hour" in s
+        v = s["tokens_last_hour"]
+        assert v is None or isinstance(v, int)
+
+
 # ────────── /api/tokens ──────────
 
 

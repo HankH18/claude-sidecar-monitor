@@ -3,56 +3,49 @@ import type { SessionState } from "../api/types";
 interface PillSpec {
   label: string;
   icon: string;
-  text: string;
-  bg: string;
-  ring: string;
-  /** When true, animate the icon dot + add a pulsing red ring around the pill. */
+  /** Tailwind text + bg classes from our warm-state palette. */
+  classes: string;
+  /** When true, animate the icon dot + add a pulsing ring around the pill. */
   pulse?: boolean;
 }
 
+/**
+ * Warm-state palette uses our `good` / `warn` / `bad` / `info` tokens with
+ * a soft tinted background. We rely on the existing `/15` opacity helper
+ * Tailwind generates for arbitrary opacities of theme colors, which gives
+ * the soft-tinted card behind warm-toned text.
+ */
 const PILLS: Record<SessionState, PillSpec> = {
   running: {
     label: "running",
     icon: "●",
-    text: "text-emerald-300",
-    bg: "bg-emerald-500/15",
-    ring: "ring-1 ring-emerald-500/40",
+    classes: "bg-good/15 text-good ring-1 ring-good/30",
   },
   tool: {
     label: "running",
     icon: "●",
-    text: "text-emerald-300",
-    bg: "bg-emerald-500/15",
-    ring: "ring-1 ring-emerald-500/40",
+    classes: "bg-good/15 text-good ring-1 ring-good/30",
   },
   idle: {
     label: "stale",
     icon: "⏱",
-    text: "text-yellow-300",
-    bg: "bg-yellow-500/15",
-    ring: "ring-1 ring-yellow-500/40",
+    classes: "bg-warn/15 text-warn ring-1 ring-warn/30",
   },
   hung: {
     label: "hung",
     icon: "⚠",
-    text: "text-red-300",
-    bg: "bg-red-500/20",
-    ring: "ring-1 ring-red-500/60",
+    classes: "bg-bad/20 text-bad ring-1 ring-bad/50",
     pulse: true,
   },
   waiting_user: {
     label: "waiting",
     icon: "🔔",
-    text: "text-orange-300",
-    bg: "bg-orange-500/15",
-    ring: "ring-1 ring-orange-500/40",
+    classes: "bg-info/15 text-info ring-1 ring-info/30",
   },
   done: {
     label: "done",
     icon: "✓",
-    text: "text-zinc-300",
-    bg: "bg-zinc-700/40",
-    ring: "ring-1 ring-zinc-600/40",
+    classes: "bg-ink-subtle/20 text-ink-muted ring-1 ring-line",
   },
 };
 
@@ -80,7 +73,7 @@ export default function StatePill({ state, label, className = "" }: StatePillPro
   return (
     <output
       aria-label={`session state: ${text}`}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${spec.bg} ${spec.text} ${spec.ring} ${spec.pulse ? "animate-pulse animate-pulse-ring" : ""} ${className}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${spec.classes} ${spec.pulse ? "animate-pulse animate-pulse-ring" : ""} ${className}`}
     >
       <span aria-hidden="true">{spec.icon}</span>
       <span>{text}</span>

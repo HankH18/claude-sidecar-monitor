@@ -65,8 +65,8 @@ export default function PermissionDeepLink() {
   if (loading) {
     return (
       <div className="space-y-3" aria-busy="true">
-        <div className="h-5 w-40 rounded bg-zinc-800/60 animate-pulse" />
-        <div className="h-3 w-3/4 rounded bg-zinc-800/40 animate-pulse" />
+        <div className="h-5 w-40 rounded bg-line/60 animate-pulse" />
+        <div className="h-3 w-3/4 rounded bg-line/40 animate-pulse" />
       </div>
     );
   }
@@ -74,11 +74,11 @@ export default function PermissionDeepLink() {
   if (error || !request) {
     return (
       <div className="space-y-3">
-        <h1 className="text-lg font-semibold text-zinc-100">Permission request</h1>
-        <p className="text-sm text-zinc-500">{error ?? "Not found."}</p>
+        <h1 className="text-2xl font-semibold text-ink leading-tight">Permission request</h1>
+        <p className="text-sm text-ink-muted">{error ?? "Not found."}</p>
         <Link
           to="/"
-          className="inline-flex items-center min-h-11 px-3 rounded-md text-xs text-emerald-300 hover:text-emerald-200 border border-zinc-800 hover:bg-zinc-900/40"
+          className="inline-flex items-center min-h-11 px-3 rounded-md text-xs text-teal hover:text-cta border border-line bg-surface hover:bg-surface-2"
         >
           ← back to Live
         </Link>

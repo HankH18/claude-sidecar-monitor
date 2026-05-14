@@ -11,6 +11,7 @@ import SessionLabel from "../components/SessionLabel";
 import { ProjectGroupSkeleton } from "../components/Skeleton";
 import StatePill from "../components/StatePill";
 import TokenBadge from "../components/TokenBadge";
+import Window from "../components/Window";
 import { usePullToRefresh } from "../hooks/usePullToRefresh";
 import { useSessions } from "../hooks/useSessions";
 import { formatRelative } from "../lib/time";
@@ -62,8 +63,8 @@ export default function Overview() {
     return (
       <div className="space-y-6" aria-busy="true">
         <div>
-          <div className="h-5 w-40 rounded bg-zinc-800/60 animate-pulse" />
-          <div className="h-3 w-32 mt-2 rounded bg-zinc-800/40 animate-pulse" />
+          <div className="h-6 w-40 rounded bg-line/60 animate-pulse" />
+          <div className="h-3 w-32 mt-2 rounded bg-line/40 animate-pulse" />
         </div>
         <ProjectGroupSkeleton rows={2} />
         <ProjectGroupSkeleton rows={1} />
@@ -77,8 +78,8 @@ export default function Overview() {
     <div className="space-y-6">
       <PullToRefreshIndicator pull={ptr.pull} armed={ptr.armed} refreshing={ptr.refreshing} />
       <header>
-        <h1 className="text-lg font-semibold text-zinc-100">Live agents</h1>
-        <p className="text-xs text-zinc-500 mt-1">
+        <h1 className="text-2xl font-semibold text-ink leading-tight">Live agents</h1>
+        <p className="text-xs text-ink-muted mt-1">
           {liveCount} active across {grouped.length} project
           {grouped.length === 1 ? "" : "s"}
         </p>
@@ -87,23 +88,23 @@ export default function Overview() {
       {grouped.length === 0 ? (
         <EmptyState
           illustration="agents"
-          title="No agents running"
-          message="Start a Claude Code session — the receiver listens at :8765 and sessions appear here within ~2s."
+          title="Nothing running"
+          message="Start a Claude Code session and it'll appear here within a second or two."
           action={
             <div className="space-y-2 text-left max-w-xs">
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[11px] text-ink-muted">
                 First-run? After installing csm, verify hooks fire:
               </p>
-              <pre className="bg-zinc-900/80 border border-zinc-800 rounded text-[11px] text-zinc-300 px-2 py-1.5 font-mono whitespace-pre-wrap break-all">
+              <pre className="bg-code-bg text-code-text border border-line rounded text-[11px] px-2 py-1.5 font-mono whitespace-pre-wrap break-all">
                 csm doctor --gate-test
               </pre>
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[11px] text-ink-muted">
                 Or read the{" "}
                 <a
                   href="https://github.com/anthropics/claude-sidecar-monitor#quickstart"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-emerald-300 hover:text-emerald-200 underline"
+                  className="text-teal hover:text-cta underline"
                 >
                   quickstart
                 </a>
@@ -120,17 +121,18 @@ export default function Overview() {
         </div>
       )}
 
-      <section aria-label="recent completions" className="space-y-2">
-        <h2 className="text-xs uppercase tracking-wide text-zinc-500">Recent completions</h2>
-        {recentDone.length === 0 ? (
-          <p className="text-xs text-zinc-600 px-1">Nothing finished yet.</p>
-        ) : (
-          <ul className="divide-y divide-zinc-800 rounded-md border border-zinc-800 overflow-hidden">
-            {recentDone.map((s) => (
-              <SessionRow key={s.session_id} s={s} />
-            ))}
-          </ul>
-        )}
+      <section aria-label="recent completions">
+        <Window icon="doc" title="Recent completions" bodyClassName="p-0">
+          {recentDone.length === 0 ? (
+            <p className="text-xs text-ink-muted px-4 py-4">Nothing wrapped up yet.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {recentDone.map((s) => (
+                <SessionRow key={s.session_id} s={s} />
+              ))}
+            </ul>
+          )}
+        </Window>
       </section>
     </div>
   );
@@ -143,7 +145,7 @@ function SessionRow({ s }: { s: Session }) {
     <li>
       <Link
         to={`/sessions/${s.session_id}`}
-        className="flex items-center gap-3 px-3 py-3 min-h-12 hover:bg-zinc-900/60 active:bg-zinc-900/80"
+        className="flex items-center gap-3 px-3 py-3 min-h-12 hover:bg-surface-2 active:bg-surface-2"
       >
         <StatePill state={stale ? "idle" : s.state} label={stale} className="shrink-0" />
         <AgentKindIcon
@@ -152,10 +154,10 @@ function SessionRow({ s }: { s: Session }) {
           className="shrink-0"
         />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1 text-sm text-zinc-100">
+          <div className="flex items-center gap-1 text-sm text-ink">
             <SessionLabel session={s} className="truncate font-medium" />
             {s.last_tool_name ? (
-              <span className="text-zinc-500 text-xs truncate shrink-0">· {s.last_tool_name}</span>
+              <span className="text-ink-muted text-xs truncate shrink-0">· {s.last_tool_name}</span>
             ) : null}
           </div>
           <ActivityLine
@@ -163,7 +165,7 @@ function SessionRow({ s }: { s: Session }) {
             updatedAt={s.activity_updated_at ?? null}
             className="mt-0.5"
           />
-          <div className="text-[11px] text-zinc-500 truncate mt-0.5">
+          <div className="text-[11px] text-ink-muted truncate mt-0.5">
             {s.primary_model ?? "model?"} ·{" "}
             {s.state === "done" && s.completed_at ? (
               <span title={new Date(s.completed_at).toLocaleString()}>
