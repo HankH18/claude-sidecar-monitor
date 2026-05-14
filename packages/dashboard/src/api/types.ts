@@ -46,6 +46,9 @@ export interface Session {
   // v2.B — activity digest (consumption side; derivation lives in the collector).
   activity_summary?: string | null;
   activity_updated_at?: string | null;
+  // V3 — rolling 60-min token spend, computed by the collector at read time.
+  // `null` means no transcript rows fell in the window (distinct from `0`).
+  tokens_last_hour?: number | null;
 }
 
 export interface ModelTokens {
@@ -97,6 +100,42 @@ export interface TokensResponse {
     cache_read: number;
     cache_write: number;
   }>;
+}
+
+// V3 — KPI rollup for the metrics landing page. Mirrors DashboardKpis on
+// the collector side (csm.api.models.DashboardKpis).
+export interface SessionStateCounts {
+  running: number;
+  tool: number;
+  waiting_user: number;
+  idle: number;
+  hung: number;
+  done: number;
+}
+
+export interface MinuteBucket {
+  ts: string;
+  count: number;
+}
+
+export interface TopModelToday {
+  model: string;
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+}
+
+export interface DashboardKpis {
+  live_sessions: number;
+  state_counts: SessionStateCounts;
+  hung_sessions: number;
+  total_tokens_today: number;
+  total_tokens_last_hour: number;
+  events_last_hour: number;
+  events_per_minute_60m: MinuteBucket[];
+  top_models_today: TopModelToday[];
+  as_of: string;
 }
 
 export interface Settings {

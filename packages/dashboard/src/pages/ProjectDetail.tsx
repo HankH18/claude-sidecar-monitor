@@ -133,7 +133,7 @@ export default function ProjectDetail() {
   if (!tree) {
     return (
       <div className="space-y-3">
-        <Breadcrumbs items={[{ label: "Live", to: "/" }, { label: "Project" }]} />
+        <Breadcrumbs items={[{ label: "Live", to: "/live" }, { label: "Project" }]} />
         <h1 className="text-2xl font-semibold text-ink">Project</h1>
         <p className="text-sm text-ink-muted">Project not found.</p>
       </div>
@@ -142,7 +142,7 @@ export default function ProjectDetail() {
 
   return (
     <div className="space-y-5">
-      <Breadcrumbs items={[{ label: "Live", to: "/" }, { label: projectLabel }]} />
+      <Breadcrumbs items={[{ label: "Live", to: "/live" }, { label: projectLabel }]} />
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold text-ink leading-tight">{projectLabel}</h1>
         <p className="text-[11px] text-ink-muted break-all">{worktreeRoot}</p>

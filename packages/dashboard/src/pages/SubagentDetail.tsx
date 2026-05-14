@@ -101,7 +101,7 @@ export default function SubagentDetail() {
   if (error || !node) {
     return (
       <div className="space-y-3">
-        <Breadcrumbs items={[{ label: "Live", to: "/" }, { label: "Subagent" }]} />
+        <Breadcrumbs items={[{ label: "Live", to: "/live" }, { label: "Subagent" }]} />
         <h1 className="text-2xl font-semibold text-ink leading-tight">Subagent</h1>
         <p className="text-sm text-ink-muted">{error ?? "Subagent not found."}</p>
         {parentSessionId ? (
@@ -126,7 +126,7 @@ export default function SubagentDetail() {
     <div className="space-y-4" data-testid="subagent-detail">
       <Breadcrumbs
         items={[
-          { label: "Live", to: "/" },
+          { label: "Live", to: "/live" },
           { label: projectLabel, to: projectHref },
           { label: "subagent" },
         ]}

@@ -3,6 +3,7 @@ import ConnectionBanner from "./components/ConnectionBanner";
 import ConnectionStatus from "./components/ConnectionStatus";
 import PendingApprovalsBanner from "./components/PendingApprovalsBanner";
 import { ToastProvider } from "./components/Toast";
+import Dashboard from "./pages/Dashboard";
 import Overview from "./pages/Overview";
 import PermissionDeepLink from "./pages/PermissionDeepLink";
 import ProjectDetail from "./pages/ProjectDetail";
@@ -65,7 +66,8 @@ export default function App() {
             <ConnectionStatus />
           </div>
           <nav className="flex border-t border-line" aria-label="primary">
-            <NavTab to="/" label="Live" />
+            <NavTab to="/" label="Dashboard" />
+            <NavTab to="/live" label="Live" />
             <NavTab to="/tokens" label="Tokens" />
             <NavTab to="/settings" label="Settings" />
           </nav>
@@ -74,7 +76,8 @@ export default function App() {
         <PendingApprovalsBanner />
         <main className="flex-1 px-4 py-5 pb-safe">
           <Routes>
-            <Route path="/" element={<Overview />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/live" element={<Overview />} />
             <Route path="/projects/:encoded" element={<ProjectDetail />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />
             <Route path="/subagents/:virtualId" element={<SubagentDetail />} />
@@ -97,7 +100,7 @@ function NotFound() {
         to="/"
         className="inline-flex items-center justify-center min-h-11 px-4 rounded-md bg-cta text-white font-medium shadow-[0_1px_0_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.25)] hover:bg-cta-hover active:translate-y-px"
       >
-        Back to Live
+        Back to dashboard
       </Link>
     </div>
   );
