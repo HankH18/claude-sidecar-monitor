@@ -286,7 +286,7 @@ export default function SessionDetail() {
     <div className="space-y-4">
       <Breadcrumbs
         items={[
-          { label: "Live", to: "/" },
+          { label: "Live", to: "/live" },
           { label: projectLabel, to: projectHref },
           {
             label: session.title ?? session.nickname ?? session.agent_type ?? "session",
