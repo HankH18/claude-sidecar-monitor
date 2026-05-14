@@ -4,11 +4,12 @@ import ActivityLine from "./ActivityLine";
 import AgentKindIcon from "./AgentKindIcon";
 import ElapsedClock from "./ElapsedClock";
 import SessionLabel from "./SessionLabel";
+import SessionStatsLine from "./SessionStatsLine";
 import StatePill from "./StatePill";
 import { formatTokens } from "./TokenBadge";
 
-/** Per-row height; bumped from 44 → 60 in V2.B to fit ActivityLine. */
-export const TREE_ROW_HEIGHT = 60;
+/** Per-row height. Bumped 60 → 76 in V3 to fit the per-row stats line. */
+export const TREE_ROW_HEIGHT = 76;
 
 export interface TreeRowData {
   /** react-arborist row id. For virtual rows this is the `virtual_id`
@@ -145,6 +146,19 @@ export default function TreeRow({ node, style }: NodeRendererProps<TreeRowData>)
       ) : apiNode.description ? (
         <p className="pl-9 text-[11px] text-ink-subtle truncate">{apiNode.description}</p>
       ) : null}
+      {/* V3 — per-row stats: started / last active / duration / total / per-hour.
+          Virtual subagent rows render the line but drop the token columns
+          (we can't attribute per-subagent yet — that's a v2.1 problem). */}
+      <SessionStatsLine
+        startedAt={session.started_at}
+        lastEventAt={session.last_event_at}
+        completedAt={session.completed_at}
+        live={live}
+        totalTokens={isVirtual ? null : ownTotal}
+        tokensLastHour={isVirtual ? null : (session.tokens_last_hour ?? null)}
+        hideTokens={isVirtual}
+        className="pl-9"
+      />
     </div>
   );
 }

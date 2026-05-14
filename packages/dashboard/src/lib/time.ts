@@ -88,3 +88,89 @@ function absoluteFormat(target: Date, ref: Date): string {
   if (sameYear) return `${month} ${target.getDate()}`;
   return `${month} ${target.getDate()}, ${target.getFullYear()}`;
 }
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * Short local-TZ time format suitable for the per-row stats line.
+ * Examples: "Mon 3:24 PM", "Fri 11:08 AM".
+ *
+ * Same-day inputs drop the weekday prefix → "3:24 PM" to save horizontal
+ * space on the (very tight) 380px mobile target. Older-than-a-week inputs
+ * fall back to "May 8 3:24 PM" so the user isn't left guessing what day
+ * "Mon" referred to.
+ *
+ * Returns an empty string for unparseable input — matches `formatRelative`.
+ */
+export function formatLocalShort(
+  iso: string | number | Date | null | undefined,
+  now?: number,
+): string {
+  if (iso === null || iso === undefined || iso === "") return "";
+  const t = iso instanceof Date ? iso.getTime() : typeof iso === "number" ? iso : Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+
+  const target = new Date(t);
+  const ref = new Date(now ?? Date.now());
+
+  let h = target.getHours();
+  const m = target.getMinutes();
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  const hm = `${h}:${String(m).padStart(2, "0")} ${ampm}`;
+
+  // Same calendar day → just the time.
+  if (
+    target.getFullYear() === ref.getFullYear() &&
+    target.getMonth() === ref.getMonth() &&
+    target.getDate() === ref.getDate()
+  ) {
+    return hm;
+  }
+
+  const diff = Math.abs(ref.getTime() - target.getTime());
+  const weekMs = 7 * 24 * 60 * 60_000;
+  if (diff < weekMs) {
+    return `${WEEKDAYS[target.getDay()]} ${hm}`;
+  }
+
+  const sameYear = target.getFullYear() === ref.getFullYear();
+  const month = MONTHS[target.getMonth()];
+  const date = `${month} ${target.getDate()}`;
+  if (sameYear) return `${date} ${hm}`;
+  return `${date}, ${target.getFullYear()} ${hm}`;
+}
+
+/**
+ * Compact duration formatter for elapsed time displays.
+ *
+ *   < 60s     → "12s"
+ *   < 60min   → "3m 4s" (drops seconds once we cross 10 min: "14m")
+ *   < 24h     → "1h 12m"
+ *   ≥ 24h     → "3d 2h"
+ *
+ * Accepts seconds (number) — callers compute the diff themselves.
+ * Returns "0s" for 0 and negative inputs (clamped).
+ */
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0s";
+  const s = Math.floor(seconds);
+  if (s < 60) return `${s}s`;
+  if (s < 3_600) {
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    if (m >= 10 || rem === 0) return `${m}m`;
+    return `${m}m ${rem}s`;
+  }
+  if (s < 86_400) {
+    const h = Math.floor(s / 3_600);
+    const m = Math.floor((s % 3_600) / 60);
+    if (m === 0) return `${h}h`;
+    return `${h}h ${m}m`;
+  }
+  const d = Math.floor(s / 86_400);
+  const h = Math.floor((s % 86_400) / 3_600);
+  if (h === 0) return `${d}d`;
+  return `${d}d ${h}h`;
+}
