@@ -46,9 +46,9 @@ def app_with_static(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     static_dir = tmp_path / "_static"
     static_dir.mkdir()
     (static_dir / "index.html").write_text(
-        '<!doctype html><html><head>'
+        "<!doctype html><html><head>"
         '<meta name="csm-token" content="__CSM_TOKEN__">'
-        '</head><body>app</body></html>',
+        "</head><body>app</body></html>",
         encoding="utf-8",
     )
     (static_dir / "assets").mkdir()

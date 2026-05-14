@@ -138,9 +138,7 @@ def test_title_collapses_internal_whitespace() -> None:
 
 def test_title_preserves_path_leading_no_capitalisation() -> None:
     """Don't capitalise `/path/to/file.ts` — it'd look broken."""
-    assert derive_title_from_user_prompt("/path/to/file.ts changes") == (
-        "/path/to/file.ts changes"
-    )
+    assert derive_title_from_user_prompt("/path/to/file.ts changes") == ("/path/to/file.ts changes")
 
 
 def test_title_real_world_examples() -> None:
@@ -189,9 +187,7 @@ def test_kind_from_prompt_regex_reviewer() -> None:
 
 
 def test_kind_from_prompt_regex_planner() -> None:
-    res = infer_agent_kind(
-        {"description": "Design the implementation plan for the v2 release"}
-    )
+    res = infer_agent_kind({"description": "Design the implementation plan for the v2 release"})
     assert res is not None
     assert res.kind == "planner"
 
@@ -389,9 +385,9 @@ def test_backfill_titles_skips_sessions_without_user_prompt_event(tmp_path) -> N
             """
         )
         assert backfill_titles(conn) == 0
-        title = conn.execute(
-            "SELECT title FROM sessions WHERE session_id = 's-orphan'"
-        ).fetchone()[0]
+        title = conn.execute("SELECT title FROM sessions WHERE session_id = 's-orphan'").fetchone()[
+            0
+        ]
         assert title == "kept"
     finally:
         conn.close()

@@ -203,9 +203,7 @@ def test_recover_no_pending_returns_primary(tmp_path, keychain_stub) -> None:
     assert recover_from_pending_rotation(db_path) == key
 
 
-def test_recover_orphan_pending_when_rekey_never_happened(
-    tmp_path, keychain_stub
-) -> None:
+def test_recover_orphan_pending_when_rekey_never_happened(tmp_path, keychain_stub) -> None:
     """Process died after step 1 (pending stash) but before step 2 (rekey):
     primary still opens the DB, so recovery deletes the orphan pending."""
     from csm.crypto import _store_pending_key, recover_from_pending_rotation
@@ -227,9 +225,7 @@ def test_recover_orphan_pending_when_rekey_never_happened(
     assert _get_pending_key() is None
 
 
-def test_recover_promotes_pending_when_rekey_succeeded(
-    tmp_path, keychain_stub
-) -> None:
+def test_recover_promotes_pending_when_rekey_succeeded(tmp_path, keychain_stub) -> None:
     """Process died after step 2 (rekey ran) but before step 3 (primary
     update): primary fails to open, pending opens. Recovery promotes
     pending → primary and clears it."""
@@ -266,9 +262,7 @@ def test_recover_promotes_pending_when_rekey_succeeded(
     _delete_pending_key()
 
 
-def test_recover_returns_none_when_neither_key_works(
-    tmp_path, keychain_stub
-) -> None:
+def test_recover_returns_none_when_neither_key_works(tmp_path, keychain_stub) -> None:
     """Both primary and pending are wrong (deeply broken Keychain state):
     return None and leave pending in place for diagnostic visibility."""
     from csm.crypto import _get_pending_key, _store_pending_key, recover_from_pending_rotation

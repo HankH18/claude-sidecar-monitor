@@ -161,10 +161,7 @@ async def push_permission_request(
         base = dashboard_url.rstrip("/")
         headers["Click"] = f"{base}/permissions/{request_id}?t={token}&exp={exp}"
 
-    body = (
-        f"Session {session_id[:8]}… is requesting permission to use "
-        f"{tool_name}. Tap to review."
-    )
+    body = f"Session {session_id[:8]}… is requesting permission to use {tool_name}. Tap to review."
 
     async with httpx.AsyncClient() as client:
         return await _post(
@@ -178,16 +175,12 @@ async def push_permission_request(
 
 
 def _dashboard_url_for(conn: Any) -> str:
-    row = conn.execute(
-        "SELECT value FROM settings WHERE key='dashboard_url'"
-    ).fetchone()
+    row = conn.execute("SELECT value FROM settings WHERE key='dashboard_url'").fetchone()
     return row[0] if row else ""
 
 
 def _api_secret_for(conn: Any) -> str:
-    row = conn.execute(
-        "SELECT value FROM settings WHERE key='api_secret'"
-    ).fetchone()
+    row = conn.execute("SELECT value FROM settings WHERE key='api_secret'").fetchone()
     return row[0] if row else ""
 
 

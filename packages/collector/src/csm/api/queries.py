@@ -403,7 +403,6 @@ def daily_totals(conn: Any, start: str, end: str) -> list[DailyTotal]:
     ]
 
 
-
 # ────────────────────────── V3 dashboard KPI rollups ──────────────────────────
 
 # Bucket size for the events-per-minute sparkline. 60 buckets * 1 minute
@@ -413,9 +412,7 @@ SPARKLINE_BUCKET_SECONDS = 60
 
 
 def _state_counts(conn: Any) -> SessionStateCounts:
-    rows = conn.execute(
-        "SELECT state, COUNT(*) FROM sessions GROUP BY state"
-    ).fetchall()
+    rows = conn.execute("SELECT state, COUNT(*) FROM sessions GROUP BY state").fetchall()
     counts = SessionStateCounts()
     for state, n in rows:
         # Setattr by state name — Pydantic v2 validates on assign.
@@ -458,9 +455,7 @@ def _events_per_minute_60m(conn: Any) -> list[MinuteBucket]:
     # Build a zero-filled series anchored on "now" rounded down to the
     # minute. Using SQLite for the anchor keeps clock semantics aligned
     # with the bucket keys above.
-    anchor_row = conn.execute(
-        "SELECT strftime('%Y-%m-%dT%H:%M:00Z', 'now')"
-    ).fetchone()
+    anchor_row = conn.execute("SELECT strftime('%Y-%m-%dT%H:%M:00Z', 'now')").fetchone()
     anchor = str(anchor_row[0]) if anchor_row and anchor_row[0] else None
     if anchor is None:
         return []

@@ -90,9 +90,7 @@ async def test_request_decision_returns_allow_when_decided(db) -> None:
     async def decider() -> None:
         await asyncio.sleep(0.05)
         # Find the pending row's id, decide allow.
-        row = db.execute(
-            "SELECT id FROM permission_requests WHERE status='pending'"
-        ).fetchone()
+        row = db.execute("SELECT id FROM permission_requests WHERE status='pending'").fetchone()
         assert row is not None
         await record_decision(db, request_id=row[0], decision="allow", reason="ok")
 
@@ -109,9 +107,7 @@ async def test_request_decision_returns_allow_when_decided(db) -> None:
     assert result.decision == "allow"
     assert result.reason == "ok"
 
-    row = db.execute(
-        "SELECT status, decision_reason FROM permission_requests"
-    ).fetchone()
+    row = db.execute("SELECT status, decision_reason FROM permission_requests").fetchone()
     assert row[0] == "allow"
     assert row[1] == "ok"
 
@@ -138,9 +134,7 @@ async def test_request_decision_returns_empty_on_timeout(db) -> None:
 async def test_request_decision_returns_deny_when_decided(db) -> None:
     async def decider() -> None:
         await asyncio.sleep(0.05)
-        row = db.execute(
-            "SELECT id FROM permission_requests WHERE status='pending'"
-        ).fetchone()
+        row = db.execute("SELECT id FROM permission_requests WHERE status='pending'").fetchone()
         await record_decision(
             db,
             request_id=row[0],
@@ -176,9 +170,7 @@ async def test_record_decision_rejects_unknown_decision(db) -> None:
 
 @pytest.mark.asyncio
 async def test_record_decision_returns_false_for_missing_row(db) -> None:
-    accepted = await record_decision(
-        db, request_id=999, decision="allow", reason=None
-    )
+    accepted = await record_decision(db, request_id=999, decision="allow", reason=None)
     assert accepted is False
 
 
@@ -193,15 +185,11 @@ async def test_record_decision_returns_false_for_already_decided(db) -> None:
         VALUES ('s1', 'Bash', '{}', 'allow', '2026-05-10T00:00:00Z', '2026-05-10T00:00:01Z')
         """
     )
-    rid = db.execute(
-        "SELECT id FROM permission_requests ORDER BY id DESC LIMIT 1"
-    ).fetchone()[0]
+    rid = db.execute("SELECT id FROM permission_requests ORDER BY id DESC LIMIT 1").fetchone()[0]
     accepted = await record_decision(db, request_id=rid, decision="deny", reason=None)
     assert accepted is False
     # Row still shows the original decision (no clobber).
-    status = db.execute(
-        "SELECT status FROM permission_requests WHERE id = ?", (rid,)
-    ).fetchone()[0]
+    status = db.execute("SELECT status FROM permission_requests WHERE id = ?", (rid,)).fetchone()[0]
     assert status == "allow"
 
 
@@ -334,7 +322,10 @@ def test_cleanup_stale_pending_marks_old_rows(db) -> None:
     touched = cleanup_stale_pending(db, max_age_seconds=3600)
     assert touched == 1
 
-    statuses = [row[0] for row in db.execute(
-        "SELECT status FROM permission_requests ORDER BY requested_at"
-    ).fetchall()]
+    statuses = [
+        row[0]
+        for row in db.execute(
+            "SELECT status FROM permission_requests ORDER BY requested_at"
+        ).fetchall()
+    ]
     assert statuses == ["timed_out", "pending"]

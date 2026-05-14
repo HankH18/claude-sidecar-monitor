@@ -183,8 +183,7 @@ def apply_event(
             from csm.identity import generate_nickname
 
             conn.execute(
-                "UPDATE sessions SET nickname = COALESCE(nickname, ?) "
-                "WHERE session_id = ?",
+                "UPDATE sessions SET nickname = COALESCE(nickname, ?) WHERE session_id = ?",
                 (generate_nickname(str(session_id)), str(session_id)),
             )
 
@@ -271,13 +270,9 @@ def _apply_agent_tool_event(
     virtual_id = f"{parent_session_id}:{tool_use_id}"
 
     if event_name == "PreToolUse":
-        description = (
-            tool_input.get("description") if isinstance(tool_input, dict) else None
-        )
+        description = tool_input.get("description") if isinstance(tool_input, dict) else None
         prompt = tool_input.get("prompt") if isinstance(tool_input, dict) else None
-        subagent_type = (
-            tool_input.get("subagent_type") if isinstance(tool_input, dict) else None
-        )
+        subagent_type = tool_input.get("subagent_type") if isinstance(tool_input, dict) else None
         kind_res = infer_agent_kind(tool_input if isinstance(tool_input, dict) else {})
         kind = kind_res.kind if kind_res else None
         title: str | None = None
@@ -369,9 +364,7 @@ def _maybe_emit_digest(conn: Any, session_id: str) -> None:
     except Exception:
         import logging
 
-        logging.getLogger(__name__).exception(
-            "digest recompute failed for session %s", session_id
-        )
+        logging.getLogger(__name__).exception("digest recompute failed for session %s", session_id)
         return
     if not changed:
         return

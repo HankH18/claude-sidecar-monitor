@@ -276,9 +276,7 @@ def test_recent_assistant_text_uses_first_sentence(db: Any) -> None:
     _insert_message(
         db,
         role="assistant",
-        content=[
-            {"type": "text", "text": "Implemented the digest module. Tests next."}
-        ],
+        content=[{"type": "text", "text": "Implemented the digest module. Tests next."}],
         timestamp=NOW - timedelta(seconds=30),
     )
     summary, _ = derive_session_digest(db, "s1", now=NOW)

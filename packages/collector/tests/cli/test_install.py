@@ -172,9 +172,7 @@ def test_setup_or_reuse_key_recovery_does_not_overwrite_keychain_on_failure(
     crypto.store_key_in_keychain(bad_key)
 
     monkeypatch.setattr(install_mod.typer, "confirm", lambda *_a, **_k: True)
-    monkeypatch.setattr(
-        install_mod.typer, "prompt", lambda *_a, **_k: "alsoincorrect-but-long"
-    )
+    monkeypatch.setattr(install_mod.typer, "prompt", lambda *_a, **_k: "alsoincorrect-but-long")
 
     with pytest.raises(typer.Exit):
         _setup_or_reuse_key(isolated_paths)
@@ -258,9 +256,7 @@ def test_purge_no_args_prints_helpful_usage() -> None:
 
 def test_purge_both_flags_explains_mutex() -> None:
     runner = CliRunner()
-    result = runner.invoke(
-        cli_app, ["purge", "--older-than", "30d", "--reset-passphrase"]
-    )
+    result = runner.invoke(cli_app, ["purge", "--older-than", "30d", "--reset-passphrase"])
     assert result.exit_code == 2
     combined = result.stdout + (result.stderr or "")
     assert "mutually exclusive" in combined.lower()

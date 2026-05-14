@@ -189,9 +189,7 @@ def load_approval_config(conn: Any) -> ApprovalConfig:
     """Read approval settings from the DB. Pure-sync."""
     rows = dict(conn.execute("SELECT key, value FROM settings").fetchall())
     tools_csv = rows.get("approval_tools", "")
-    tools = frozenset(
-        t.strip() for t in tools_csv.split(",") if t.strip()
-    )
+    tools = frozenset(t.strip() for t in tools_csv.split(",") if t.strip())
     return ApprovalConfig(
         enabled=rows.get("approval_enabled", "0") == "1",
         tools=tools,
@@ -313,9 +311,7 @@ async def request_decision(
                 # Keep a strong reference to the cleanup task so the
                 # loop's weakref-keyed task set doesn't GC it before
                 # it can flip the DB row to timed_out.
-                _register_cleanup_task(
-                    loop.create_task(_finalize_timeout(conn, request_id))
-                )
+                _register_cleanup_task(loop.create_task(_finalize_timeout(conn, request_id)))
             except RuntimeError:
                 # No loop — synchronous path; row will be swept by
                 # cleanup_stale_pending on next startup.

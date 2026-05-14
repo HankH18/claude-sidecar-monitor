@@ -208,9 +208,7 @@ def install_command(
 
         conn = connect(key=key, db_path=paths.db)
         try:
-            current = conn.execute(
-                "SELECT value FROM settings WHERE key='api_secret'"
-            ).fetchone()
+            current = conn.execute("SELECT value FROM settings WHERE key='api_secret'").fetchone()
             if current is None or not current[0]:
                 api_secret = secrets.token_urlsafe(32)
                 conn.execute(

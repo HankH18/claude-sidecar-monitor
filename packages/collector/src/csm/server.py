@@ -106,9 +106,7 @@ def _resolve_static_dir() -> Path | None:
     bundled = Path(__file__).resolve().parent / "_static"
     if bundled.exists():
         return bundled
-    monorepo_dist = (
-        Path(__file__).resolve().parent.parent.parent.parent / "dashboard" / "dist"
-    )
+    monorepo_dist = Path(__file__).resolve().parent.parent.parent.parent / "dashboard" / "dist"
     return monorepo_dist if monorepo_dist.exists() else None
 
 
@@ -119,9 +117,7 @@ def _read_api_secret(app: FastAPI) -> str:
     db = getattr(app.state, "db", None)
     if db is None:
         return ""
-    row = db.execute(
-        "SELECT value FROM settings WHERE key = 'api_secret'"
-    ).fetchone()
+    row = db.execute("SELECT value FROM settings WHERE key = 'api_secret'").fetchone()
     return str(row[0]) if row and row[0] else ""
 
 

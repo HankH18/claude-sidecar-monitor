@@ -61,9 +61,7 @@ async def receive_hook(
     if event_name == "PreToolUse":
         from csm.permissions import is_tool_approval_required, request_decision
 
-        config = await asyncio.to_thread(
-            is_tool_approval_required, db, payload.get("tool_name")
-        )
+        config = await asyncio.to_thread(is_tool_approval_required, db, payload.get("tool_name"))
         if config is not None:
             session_id = str(payload.get("session_id") or "")
             tool_use_id_raw = payload.get("tool_use_id")

@@ -131,9 +131,7 @@ def _derive_worktree_from_jsonl_path(jsonl_path: Path) -> str:
     return resolve_worktree(decoded)
 
 
-def _backfill_worktree_and_resolve_parent(
-    conn: Any, jsonl_path: Path, session_id: str
-) -> None:
+def _backfill_worktree_and_resolve_parent(conn: Any, jsonl_path: Path, session_id: str) -> None:
     row = conn.execute(
         "SELECT worktree_root FROM sessions WHERE session_id=?", (session_id,)
     ).fetchone()

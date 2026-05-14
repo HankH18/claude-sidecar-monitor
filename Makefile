@@ -51,7 +51,7 @@ test:
 	cd packages/dashboard && $(BUN) run test
 
 lint:
-	cd packages/collector && uv run ruff check .
+	cd packages/collector && uv run ruff check . && uv run ruff format --check .
 	cd packages/dashboard && $(BUN) run lint
 
 format:

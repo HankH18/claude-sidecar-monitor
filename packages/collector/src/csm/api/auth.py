@@ -38,9 +38,7 @@ DEEP_LINK_TTL_SECONDS = 60 * 30  # 30-minute window for ntfy deep-links
 
 
 def _api_secret(conn: Any) -> str:
-    row = conn.execute(
-        "SELECT value FROM settings WHERE key='api_secret'"
-    ).fetchone()
+    row = conn.execute("SELECT value FROM settings WHERE key='api_secret'").fetchone()
     return row[0] if row else ""
 
 
@@ -53,7 +51,9 @@ def constant_time_compare(a: str, b: str) -> bool:
     return hmac.compare_digest(a, b)
 
 
-def sign_deep_link(*, request_id: int, api_secret: str, ttl_s: int = DEEP_LINK_TTL_SECONDS) -> tuple[str, int]:
+def sign_deep_link(
+    *, request_id: int, api_secret: str, ttl_s: int = DEEP_LINK_TTL_SECONDS
+) -> tuple[str, int]:
     """Produce ``(token, exp)`` for embedding in an ntfy push URL.
 
     The token is base64url-encoded HMAC-SHA256 of ``"<request_id>:<exp>"``.
@@ -118,7 +118,9 @@ def require_bearer(request: Request) -> str:
     if not header.lower().startswith("bearer "):
         raise HTTPException(
             status_code=401,
-            detail={"error": {"code": "missing_bearer", "message": "Authorization header required"}},
+            detail={
+                "error": {"code": "missing_bearer", "message": "Authorization header required"}
+            },
         )
     presented = header.split(None, 1)[1].strip()
     if not constant_time_compare(secret, presented):

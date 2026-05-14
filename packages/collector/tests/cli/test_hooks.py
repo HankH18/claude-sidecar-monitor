@@ -242,9 +242,7 @@ def test_invalid_json_in_settings_rejected(settings_path: Path, script_path: Pat
         install_hooks(settings_path=settings_path, script_path=script_path)
 
 
-def test_corrupt_settings_still_gets_backed_up(
-    settings_path: Path, script_path: Path
-) -> None:
+def test_corrupt_settings_still_gets_backed_up(settings_path: Path, script_path: Path) -> None:
     """Even when settings.json is broken JSON (the case where backup
     matters MOST), the .bak.<timestamp> file must exist after the failed
     install attempt so the user can recover."""

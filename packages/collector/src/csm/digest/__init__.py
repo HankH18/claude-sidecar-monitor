@@ -149,8 +149,7 @@ def apply_digest_update(
         return summary, generated_at, False
 
     conn.execute(
-        "UPDATE sessions SET activity_summary = ?, activity_updated_at = ? "
-        "WHERE session_id = ?",
+        "UPDATE sessions SET activity_summary = ?, activity_updated_at = ? WHERE session_id = ?",
         (summary, generated_at, session_id),
     )
     return summary, generated_at, True
@@ -180,9 +179,7 @@ def _pending_approval(conn: Any, session_id: str) -> str | None:
 def _active_tool(conn: Any, session_id: str, now: datetime) -> str | None:
     """Look for a PreToolUse without a corresponding PostToolUse (matched
     on tool_use_id when available, fallback to "no Post since the Pre")."""
-    cutoff = (now - timedelta(seconds=ACTIVE_TOOL_WINDOW_S)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    cutoff = (now - timedelta(seconds=ACTIVE_TOOL_WINDOW_S)).strftime("%Y-%m-%dT%H:%M:%SZ")
     row = conn.execute(
         """
         SELECT event_id, tool_name, tool_use_id, payload_json, received_at
@@ -284,12 +281,8 @@ def _basename_of(value: Any) -> str | None:
 _SENTENCE_END_RE = re.compile(r"^([^.!?\n]+[.!?])(?:\s|$)")
 
 
-def _recent_message_digest(
-    conn: Any, session_id: str, now: datetime
-) -> str | None:
-    cutoff = (now - timedelta(seconds=RECENT_TEXT_WINDOW_S)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+def _recent_message_digest(conn: Any, session_id: str, now: datetime) -> str | None:
+    cutoff = (now - timedelta(seconds=RECENT_TEXT_WINDOW_S)).strftime("%Y-%m-%dT%H:%M:%SZ")
     # Pull the most recent assistant + user messages in the window in
     # a single scan, ordered newest-first.
     rows = conn.execute(

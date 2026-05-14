@@ -225,9 +225,7 @@ def test_migration_atomic_rollback_on_partial_failure(
         ).fetchall()
         assert rows == []
         # 099 was NOT recorded as applied.
-        applied = {
-            row[0] for row in conn.execute("SELECT version FROM _migrations").fetchall()
-        }
+        applied = {row[0] for row in conn.execute("SELECT version FROM _migrations").fetchall()}
         assert 99 not in applied
     finally:
         conn.close()

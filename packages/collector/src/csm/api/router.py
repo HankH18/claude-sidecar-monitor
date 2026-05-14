@@ -124,9 +124,7 @@ async def get_transcript(
     # without needing the client to round-trip an empty next-page request.
     # If we get back limit+1 rows we know there's more; trim and emit a
     # cursor. If we get back ≤limit rows, this was the tail.
-    rows = await asyncio.to_thread(
-        list_transcript, db, session_id, after=cursor, limit=limit + 1
-    )
+    rows = await asyncio.to_thread(list_transcript, db, session_id, after=cursor, limit=limit + 1)
     if len(rows) > limit:
         messages = rows[:limit]
         next_cursor: int | None = messages[-1].message_id
@@ -307,9 +305,7 @@ async def stream(request: Request) -> EventSourceResponse:
                     for t in (get_task, wait_task):
                         if not t.done():
                             t.cancel()
-                            with contextlib.suppress(
-                                asyncio.CancelledError, BaseException
-                            ):
+                            with contextlib.suppress(asyncio.CancelledError, BaseException):
                                 await t
                 if disconnect_event.is_set():
                     break
