@@ -11,6 +11,14 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
+      // Self-destroy: the SW unregisters on next page load. We disabled
+      // PWA caching because the SW's NavigationRoute serves the precached
+      // index.html for every nav request, bypassing the server-side
+      // csm-token substitution. Until the SW grows a NetworkFirst HTML
+      // strategy AND we ship a non-templated dev shell, keep it off.
+      // Setting `selfDestroying: true` also handles users with a stale SW
+      // from earlier V2 builds — they'll be cleaned up automatically.
+      selfDestroying: true,
       includeAssets: ["favicon.svg", "apple-touch-icon-180.png"],
       manifest: {
         name: "Sidecar",

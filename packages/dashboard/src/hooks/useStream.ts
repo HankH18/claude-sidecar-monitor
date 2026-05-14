@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { mockStream } from "../api/mock";
 import { useMock } from "../api/mode";
-import { openStream } from "../api/stream";
+import { type ConnectionStatus, subscribeEvents, subscribeStatus } from "../api/streamBus";
 import type { StreamEvent, StreamEventKind } from "../api/types";
 
-export type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "disconnected";
+export type { ConnectionStatus } from "../api/streamBus";
 
 interface UseStreamOptions {
   /** Only receive events with this kind. */
@@ -23,6 +23,11 @@ export interface UseStreamResult {
 /**
  * Subscribes to either the real /stream SSE endpoint or the mock generator,
  * exposes the latest event, a rolling buffer, and a coarse connection status.
+ *
+ * All real-mode subscribers share a single EventSource via streamBus —
+ * critical for pages that mount many useStream consumers (Overview's
+ * ProjectTreeSections + page-level hooks), because browsers cap HTTP/1.1
+ * connections per origin at 6.
  *
  * Components that just want the latest event for a session should use
  * `lastEvent`. Pages with a timeline can read `events`. The header dot reads
@@ -54,14 +59,12 @@ export function useStream(options: UseStreamOptions = {}): UseStreamResult {
       const ctl = mockStream(handler);
       return () => ctl.close();
     }
-    setStatus("connecting");
-    const ctl = openStream(handler, {
-      onOpen: () => setStatus("connected"),
-      onError: () => {
-        setStatus((prev) => (prev === "connected" ? "reconnecting" : "disconnected"));
-      },
-    });
-    return () => ctl.close();
+    const unsubEvents = subscribeEvents(handler);
+    const unsubStatus = subscribeStatus(setStatus);
+    return () => {
+      unsubEvents();
+      unsubStatus();
+    };
   }, [mock, kind, limit]);
 
   return { lastEvent, events, status, lastEventAt };
